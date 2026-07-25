@@ -104,18 +104,27 @@ details[open] summary{margin-bottom:3px}
     <span id="connStatus" style="font-size:10px;color:var(--fg2)">connecting</span>
     <span style="font-size:10px;color:var(--fg2)" id="simTime">--:--:--</span>
     <span style="font-size:9px;color:var(--fg2)" id="speedDisplay">1x</span>
+    <span id="aiBadge" onclick="toggleAiDetail()" style="font-size:9px;padding:1px 6px;border-radius:4px;cursor:pointer;display:none;font-weight:600">● LOW</span>
     <span style="margin-left:auto;font-size:10px;color:var(--fg2)" id="duration">--</span>
     <span style="font-size:9px;color:var(--fg2)" id="etaSpan"></span>
-    <button class="btn" onclick="toggleFS()" title="Fullscreen">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
-    </button>
-    <button class="btn" onclick="document.body.classList.toggle('dark')" title="Theme">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><circle cx="8" cy="8" r="3.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
+    <button class="btn" onclick="toggleFS()" title="Fullscreen" style="font-size:13px;line-height:1">&#x26F6;</button>
+    <button class="btn" onclick="document.body.classList.toggle('dark')" title="Theme" style="font-size:13px;line-height:1">&#x25D0;</button>
+    <button class="btn" onclick="toggleSettings()" title="Settings">
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>
     </button>
   </div>
   <div id="statusBar" class="mb1">
     <svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><circle cx="8" cy="8" r="4"/></svg>
     <span id="statusMsg" style="font-size:11px">Loading market data...</span>
+  </div>
+  <div id="aiDetail" style="display:none;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);margin-bottom:4px;font-size:11px;background:var(--hl)">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+      <span style="font-weight:700;font-size:12px" id="aiDetailTitle">● LOW</span>
+      <span style="color:var(--fg2)" id="aiDetailMsg">No significant volatility expected</span>
+      <button onclick="toggleAiDetail()" style="margin-left:auto;background:none;border:none;color:var(--fg3);cursor:pointer;font-size:14px">✕</button>
+    </div>
+    <div style="display:flex;gap:3px;align-items:flex-end;height:40px;padding:4px 0" id="aiDetailBars"></div>
+    <div style="display:flex;gap:3px;font-size:8px;color:var(--fg2);text-align:center" id="aiDetailDates"></div>
   </div>
   <div class="card top-card">
     <div class=top-grid>
@@ -251,6 +260,32 @@ details[open] summary{margin-bottom:3px}
       <div class="moves-list" id="dailyPnlList"></div>
     </div>
   </div>
+<div id="settingsOverlay" onclick="toggleSettings()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:99"></div>
+<div id="settingsPanel" style="display:none;position:fixed;top:0;right:0;width:280px;height:100%;z-index:100;background:var(--bg2);border-left:1px solid var(--bd);padding:16px;overflow-y:auto;box-shadow:-4px 0 20px rgba(0,0,0,0.3)">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <span style="font-weight:600;font-size:14px">Settings</span>
+    <button onclick="toggleSettings()" style="background:none;border:none;color:var(--fg2);font-size:18px;cursor:pointer">✕</button>
+  </div>
+  <div style="margin-bottom:16px">
+    <div style="font-size:11px;font-weight:500;margin-bottom:8px;color:var(--fg2)">Sim Speed</div>
+    <input type="range" min="0" max="4" value="3" step="1" id="speedSlider" style="width:100%;accent-color:var(--cyn)" oninput="updateSpeed(this)">
+    <div style="display:flex;justify-content:space-between;font-size:10px;margin-top:4px;color:var(--fg2)">
+      <span>1×</span><span>10×</span><span>100×</span><span>1K×</span><span>10K×</span>
+    </div>
+    <div style="text-align:center;font-size:13px;font-weight:700;margin-top:6px" id="speedLabel">1000×</div>
+  </div>
+  <button onclick="restartSim()" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--bd);background:var(--bg2);color:var(--fg);cursor:pointer;font:inherit;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px">🔄 Restart Sim</button>
+  <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bd)">
+    <div style="font-size:10px;font-weight:500;margin-bottom:6px;color:var(--fg2);text-transform:uppercase;letter-spacing:.5px">History Presets</div>
+    <div style="display:flex;flex-direction:column;gap:3px" id="presetList"></div>
+  </div>
+  <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bd);font-size:10px;color:var(--fg2)">
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Max Trade Duration</span><span style="font-weight:600" id="maxTradeDaysLabel">30 days</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Grid Levels</span><span style="font-weight:600">401</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Base Lot</span><span style="font-weight:600">0.001</span></div>
+    <div style="display:flex;justify-content:space-between"><span>DD Halt</span><span style="font-weight:600">10%</span></div>
+  </div>
+</div>
 <script>
 var _ct=0,_lc2=0,_latestData=null,_rp=false,tickBuf=[],dark=true,_last15=-1,_15marks=[],chartData=[],maxP=300,es=null,dailyMoves=[],dailyMovesMax=0,monthlyMoves=[],monthlyMovesMax=0,dailyPnlLog=[],dailyPnlCum=0;
 function renderMoves(){
@@ -360,6 +395,7 @@ function renderAll(d){
   }else{
     var banner=$("volBanner");if(banner)banner.remove();
   }
+  if(va&&va.level)updateAiBadge(va);
   $("simTime").textContent=d.sim_time||"--:--:--";
   $("speedDisplay").textContent=(d.speed||1)>=1000000?Math.floor(d.speed/1000000)+"Mx":(d.speed||1)>=1000?Math.floor(d.speed/1000)+"Kx":(d.speed||1)+"x";
   if(d.elapsed_seconds!=null){
@@ -471,6 +507,114 @@ function renderMonthly(){
       +'<div class="moves-bar-wrap"><div class="moves-bar-fill" style="width:'+pct+'%;background:'+barClr+'""></div></div>'
       +'<span class="moves-trend'+(m.trend>=0?' grn':' red')+'">'+(m.trend>=0?'+':'')+m.trend+'p</span"></div>'
   }).join("");
+}
+var _lastAiVa=null;
+function updateAiBadge(va){
+  var badge=$("aiBadge"),detail=$("aiDetail");
+  if(!badge)return;
+  if(!va||!va.level){return} // persist last alert
+  _lastAiVa=va;
+  var cl="",lbl=va.level;
+  if(va.level==="CRITICAL"){cl="#ef4444";badge.style.background="rgba(220,38,38,0.15)";badge.style.color="#ef4444"}
+  else if(va.level==="WARNING"){cl="#eab308";badge.style.background="rgba(234,179,8,0.15)";badge.style.color="#eab308"}
+  else{cl="#3b82f6";badge.style.background="rgba(59,130,246,0.15)";badge.style.color="#3b82f6"}
+  badge.style.display="inline";
+  badge.innerHTML='<span style="color:'+cl+'">\u25CF</span> '+lbl;
+}
+function toggleAiDetail(){
+  var detail=$("aiDetail");
+  if(!detail)return;
+  if(detail.style.display==="none"){
+    detail.style.display="block";
+    renderAiDetail();
+  }else{
+    detail.style.display="none";
+  }
+}
+function renderAiDetail(){
+  var va=_lastAiVa;
+  if(!va||!va.level){$("aiDetailTitle").textContent="No alert";$("aiDetailMsg").textContent="Normal conditions";return}
+  var cl="";
+  if(va.level==="CRITICAL"){cl="#ef4444"}
+  else if(va.level==="WARNING"){cl="#eab308"}
+  else{cl="#3b82f6"}
+  $("aiDetailTitle").innerHTML='<span style="color:'+cl+'">\u25CF</span> '+va.level;
+  $("aiDetailMsg").textContent=va.msg;
+  // Generate 7 mini bars from pips - simulate forward distribution
+  var pips=va.pips||1000;
+  var bars=[];
+  var dates=[];
+  var dayNames=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  var now=new Date();
+  for(var i=0;i<7;i++){
+    var ratio=0.2+Math.random()*0.8;
+    var dayPips=Math.round(pips*ratio);
+    if(i===3||i===4)dayPips=Math.round(pips*(0.7+Math.random()*0.3));
+    bars.push(dayPips);
+    var d=new Date(now);d.setDate(d.getDate()+i);dates.push(dayNames[d.getDay()]);
+  }
+  var maxPip=Math.max.apply(null,bars);
+  var barHtml=dates.map(function(d,i){
+    var h=Math.max(4,(bars[i]/maxPip)*36);
+    var bc=bars[i]>5000?"#ef4444":bars[i]>2500?"#eab308":bars[i]>1000?"#3b82f6":"#22c55e";
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px"><div style="height:'+h+'px;width:100%;border-radius:3px;background:'+bc+';min-height:4px"></div></div>';
+  }).join("");
+  $("aiDetailBars").innerHTML=barHtml;
+  $("aiDetailDates").innerHTML=dates.map(function(d){return '<div style="flex:1;text-align:center">'+d+'</div>'}).join("");
+}
+function toggleSettings(){
+  var p=$("settingsPanel"),o=$("settingsOverlay");
+  if(!p)return;
+  var show=p.style.display==="none";
+  p.style.display=show?"block":"none";
+  if(o)o.style.display=show?"block":"none";
+  // Sync slider with current speed
+  if(show){
+    var speeds=[1,10,100,1000,10000];
+    var val=$("speedDisplay").textContent;
+    var idx=3;
+    for(var i=0;i<speeds.length;i++){
+      if(val.indexOf(speeds[i]+"x")>=0||val.indexOf(speeds[i].toLocaleString()+"x")>=0){idx=i;break}
+    }
+    $("speedSlider").value=idx;
+    $("speedLabel").textContent=speeds[idx]+"\u00d7";
+  }
+}
+function updateSpeed(el){
+  var speeds=[1,10,100,1000,10000];
+  var s=speeds[parseInt(el.value)];
+  $("speedLabel").textContent=s+"\u00d7";
+  fetch("/speed",{method:"POST",body:JSON.stringify({speed:s})}).catch(function(){});
+}
+function restartSim(){
+  fetch("/restart",{method:"POST"}).then(function(){toggleSettings()}).catch(function(){});
+}
+var presets=[
+  {name:"full2022",icon:"🕊️",label:"Normal 2022",sub:"full year"},
+  {name:"ukraine",icon:"🇺🇦",label:"Ukraine War",sub:"Jan-Apr 22"},
+  {name:"crash2022",icon:"📉",label:"2022 Crash",sub:"Jun-Nov 22"},
+  {name:"svb",icon:"🏦",label:"SVB Crisis",sub:"Feb-May 23"},
+  {name:"oct2023",icon:"🇮🇱",label:"Oct 2023 War",sub:"Sep-Nov 23"},
+  {name:"rally2024",icon:"📈",label:"Gold Rally 24",sub:"Mar-Jun 24"},
+  {name:"election2024",icon:"🏛️",label:"US Election 24",sub:"Sep-Dec 24"},
+  {name:"tariff2025",icon:"🌐",label:"Tariff War 25",sub:"Mar-Jun 25"},
+  {name:"crash2026",icon:"☢️",label:"130K Crash",sub:"Jan-Mar 26 ★"},
+  {name:"all",icon:"📊",label:"Full Timeline",sub:"2022-2026"},
+];
+(function(){
+  var el=document.getElementById("presetList");
+  if(!el)return;
+  el.innerHTML=presets.map(function(p){
+    return '<button onclick="loadPreset(\''+p.name+'\')" style="padding:5px 8px;border-radius:5px;border:1px solid var(--bd);background:var(--bg2);color:var(--fg);cursor:pointer;font:inherit;font-size:10px;display:flex;align-items:center;gap:6px;text-align:left;width:100%">'
+      +'<span style="font-size:13px">'+p.icon+'</span>'
+      +'<span style="flex:1"><span style="font-weight:500">'+p.label+'</span><span style="color:var(--fg2);font-size:9px;margin-left:4px">'+p.sub+'</span></span></button>';
+  }).join("");
+})();
+function loadPreset(name){
+  fetch("/preset",{method:"POST",body:JSON.stringify({name:name})}).then(function(r){return r.json()}).then(function(d){
+    $("speedDisplay").textContent=d.days+" days";
+    toggleSettings();
+  }).catch(function(){});
 }
 function switchTab(name,btn){
   if(name==="moves" && dailyMoves)renderMoves();

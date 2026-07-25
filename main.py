@@ -2,6 +2,7 @@ import json, time, random, asyncio, math
 from datetime import datetime, timedelta
 from pathlib import Path
 from broker import account_summary, open_positions, tick_prices, grid_hits, simulate, simulate_from_keyframes, update_atr, current_spacing, PIP
+from collections import deque
 from aiohttp import web
 
 PIP_VALUE = 10.0
@@ -37,7 +38,7 @@ def load_keyframes():
 
 keyframes = load_keyframes()
 if keyframes:
-    keyframes = [k for k in keyframes if k["date"][:10] >= "2022-01-01" and k["date"][:10] <= "2022-04-30" and not (k["open"] == k["high"] == k["low"] == k["close"])]
+    keyframes = [k for k in keyframes if k["date"][:10] >= "2022-01-01" and k["date"][:10] <= "2022-12-31" and not (k["open"] == k["high"] == k["low"] == k["close"])]
 
 daily_moves = []
 if keyframes:
@@ -124,6 +125,109 @@ async def stream_handler(request):
         clients.discard(q)
     return resp
 
+async def set_speed(request):
+    global speed_multiplier
+    try:
+        body = await request.json()
+        speed_multiplier = max(1, min(1000000, int(body.get("speed", 1000))))
+        return web.json_response({"speed": speed_multiplier})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=400)
+
+async def restart_sim(request):
+    global _loop_active
+    _loop_active = False
+    await asyncio.sleep(0.5)
+    import broker as _b
+    _b.orders.clear()
+    _b.trades.clear()
+    _b.hit_log.clear()
+    _b.closed_trades.clear()
+    _b.price_history.clear()
+    _b.balance = 1000000.0
+    _b.start_balance = 1000000.0
+    _b.equity_peak = 1000000.0
+    _b.daily_trade_count = 0
+    _b.total_trades = 0
+    _b.current_atr = 5.0
+    _b.lot_size = _b.BASE_LOT
+    _b.trading_halted = False
+    _b.total_wins_cumulative = 0
+    _b.total_losses_cumulative = 0
+    _b.cumulative_win_pnl = 0.0
+    _b.cumulative_loss_pnl = 0.0
+    _loop_active = True
+    asyncio.ensure_future(tick_loop())
+    return web.json_response({"status": "restarted"})
+
+PRESETS = {
+    "ukraine": {"start": "2022-01-01", "end": "2022-04-30", "speed": 100, "label": "Ukraine War"},
+    "crash2022": {"start": "2022-06-01", "end": "2022-11-30", "speed": 100, "label": "2022 Crash"},
+    "svb": {"start": "2023-02-01", "end": "2023-05-31", "speed": 100, "label": "SVB Crisis"},
+    "oct2023": {"start": "2023-09-01", "end": "2023-11-30", "speed": 100, "label": "Oct 2023 War"},
+    "rally2024": {"start": "2024-03-01", "end": "2024-06-30", "speed": 100, "label": "Gold Rally 24"},
+    "election2024": {"start": "2024-09-01", "end": "2024-12-31", "speed": 100, "label": "US Election 24"},
+    "tariff2025": {"start": "2025-03-01", "end": "2025-06-30", "speed": 100, "label": "Tariff War 25"},
+    "crash2026": {"start": "2026-01-01", "end": "2026-03-31", "speed": 10, "label": "130K Crash"},
+    "full2022": {"start": "2022-01-01", "end": "2022-12-31", "speed": 1000, "label": "Normal 2022"},
+    "all": {"start": "2022-01-01", "end": "2026-07-31", "speed": 1000, "label": "Full Timeline"},
+}
+
+_loop_active = False
+
+async def set_preset(request):
+    global keyframes, daily_moves, monthly_moves, speed_multiplier, _loop_active
+    try:
+        body = await request.json()
+        name = body.get("name", "")
+        p = PRESETS.get(name)
+        if not p:
+            return web.json_response({"error": f"Unknown preset: {name}"}, status=400)
+        _loop_active = False
+        await asyncio.sleep(0.5)
+        import broker as _b
+        _b.orders.clear()
+        _b.trades.clear()
+        _b.hit_log.clear()
+        _b.closed_trades.clear()
+        _b.price_history.clear()
+        _b.balance = 1000000.0
+        _b.start_balance = 1000000.0
+        _b.equity_peak = 1000000.0
+        _b.daily_trade_count = 0
+        _b.total_trades = 0
+        _b.current_atr = 5.0
+        _b.lot_size = _b.BASE_LOT
+        _b.trading_halted = False
+        _b.total_wins_cumulative = 0
+        _b.total_losses_cumulative = 0
+        _b.cumulative_win_pnl = 0.0
+        _b.cumulative_loss_pnl = 0.0
+        all_kf = load_keyframes()
+        keyframes = [k for k in all_kf if p["start"] <= k["date"][:10] <= p["end"] and not (k["open"] == k["high"] == k["low"] == k["close"])]
+        daily_moves = []
+        if keyframes:
+            days = {}
+            for d in keyframes:
+                date = d["date"][:10]
+                if date not in days:
+                    days[date] = {"date": date, "o": d["open"], "h": d["high"], "l": d["low"], "c": d["close"]}
+                else:
+                    days[date]["h"] = max(days[date]["h"], d["high"])
+                    days[date]["l"] = min(days[date]["l"], d["low"])
+                    days[date]["c"] = d["close"]
+            for day in days.values():
+                r = round((day["h"] - day["l"]) / 0.01)
+                t = round((day["c"] - day["o"]) / 0.01)
+                daily_moves.append({"date": day["date"], "o": day["o"], "h": day["h"], "l": day["l"], "c": day["c"], "range": r, "trend": t, "dir": "DOWN" if day["c"] < day["o"] else "UP"})
+            daily_moves.sort(key=lambda x: x["range"], reverse=True)
+        speed_multiplier = p["speed"]
+        _loop_active = True
+        asyncio.ensure_future(tick_loop())
+        return web.json_response({"status": "switched", "days": len(keyframes), "speed": p["speed"], "label": p["label"]})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=400)
+
 async def simulate_handler(request):
     hours = int(request.query.get("hours", 24))
     result = await asyncio.to_thread(simulate, hours, BASE_PRICE)
@@ -154,7 +258,9 @@ async def static_handler(request):
     raise web.HTTPNotFound()
 
 async def tick_loop():
-    global last_broadcast
+    global last_broadcast, _loop_active
+    if not _loop_active:
+        _loop_active = True
     if not keyframes:
         return
     from broker import orders, trades, hit_log, closed_trades, price_history
@@ -185,25 +291,60 @@ async def tick_loop():
     tick_count = 0
     noise_prev = 0.0
     phi = 0.85
+    atr_short = __import__("collections").deque(maxlen=60)
+    atr_long = __import__("collections").deque(maxlen=1440)
+    prev_mid_for_atr = mid_p
+    reactive_alert_day = -1
 
+    vol_events = {
+        "2022-01-03": "New Year, gold consolidates",
+        "2022-01-04": "Fed tapering expectations",
+        "2022-02-14": "\uD83C\uDDFA\uD83C\uDDE6 Ukraine invasion imminent — gold 1973 spike incoming",
+        "2022-02-24": "\uD83C\uDDFA\uD83C\uDDE6 Russia invades Ukraine — gold 2072 peak",
+        "2022-03-01": "Fed rate hikes begin",
+        "2022-03-08": "Gold at 2072 war high",
+        "2022-06-15": "Fed 75bp hike — gold crashes",
+        "2022-09-28": "Gold 1620 — 2-year low, DXY 114",
+        "2022-11-03": "Fed pivot hopes — gold 1778",
+        "2023-03-10": "\uD83C\uDFE6 SVB collapse — banking crisis",
+        "2023-05-04": "Gold 2072 new ATH — debt ceiling",
+        "2023-10-07": "\uD83C\uDDF5\uD83C\uDDF8 Hamas attack — gold 2004",
+        "2023-12-04": "Gold 2130 ATH — rate cut hopes",
+        "2024-03-08": "Gold 2200 — central bank buying",
+        "2024-04-19": "\uD83C\uDF0D Iran-Israel tensions — gold 2429",
+        "2024-09-18": "Fed cuts 50bp — gold 2672",
+        "2025-01-20": "\uD83C\uDDFA\uD83C\uDDF8 Trump tariff threats — gold 2838",
+        "2025-04-02": "\uD83C\uDF0D Tariff war escalates — gold 3485",
+        "2025-09-15": "BRICS+ summit — de-dollarization",
+        "2025-10-15": "\uD83C\uDFDB\uFE0F US fiscal crisis — gold 4358",
+        "2026-01-29": "Gold 5586 parabolic spike — reserve crisis",
+        "2026-03-02": "\u26A1 Gold crash begins — 5405 to 4100",
+        "2026-03-23": "Gold 4100 — liquidity crisis low",
+    }
     vol_alerts = {}
     for day_idx in range(total_kf):
         day_range = max(kf[day_idx]["high"] - kf[day_idx]["low"], 1.0)
         max_fwd = day_range
+        max_date = kf[day_idx]["date"][:10]
         for fwd in range(1, min(8, total_kf - day_idx)):
             fwd_r = max(kf[day_idx + fwd]["high"] - kf[day_idx + fwd]["low"], 1.0)
             if fwd_r > max_fwd:
                 max_fwd = fwd_r
+                max_date = kf[day_idx + fwd]["date"][:10]
         if max_fwd > 15.0:
             range_pips = round(max_fwd / 0.01)
+            ev = vol_events.get(max_date, "")
+            ev_prefix = ev + " — " if ev else ""
             if range_pips > 5000:
-                vol_alerts[day_idx] = {"level": "CRITICAL", "msg": f"{range_pips}pip spike incoming within 7 days", "pips": range_pips}
+                vol_alerts[day_idx] = {"level": "CRITICAL", "msg": f"{ev_prefix}{range_pips}pip spike incoming within 7 days", "pips": range_pips, "event": ev}
             elif range_pips > 2500:
-                vol_alerts[day_idx] = {"level": "WARNING", "msg": f"{range_pips}pip volatility expected within 7 days", "pips": range_pips}
+                vol_alerts[day_idx] = {"level": "WARNING", "msg": f"{ev_prefix}{range_pips}pip volatility expected within 7 days", "pips": range_pips, "event": ev}
             elif range_pips > 1000:
-                vol_alerts[day_idx] = {"level": "NOTICE", "msg": f"{range_pips}pip move possible within 7 days", "pips": range_pips}
+                vol_alerts[day_idx] = {"level": "NOTICE", "msg": f"{ev_prefix}{range_pips}pip move possible within 7 days", "pips": range_pips, "event": ev}
 
     for day_idx in range(total_kf):
+        if not _loop_active:
+            return
         day = kf[day_idx]
         o, h, l, c = day["open"], day["high"], day["low"], day["close"]
         res = day.get("res", 86400)
@@ -213,20 +354,45 @@ async def tick_loop():
         per_tick_vol = daily_range / sqrt_t * math.sqrt(1 - phi * phi) * 0.5
         day_start = datetime.strptime(day["date"][:10], "%Y-%m-%d")
         day_seconds = int(day["date"][11:13]) * 3600 + int(day["date"][14:16]) * 60 if len(day["date"]) > 10 else 0
+        _b.daily_start_balance = _b.balance
         day_start_bal = _b.balance
         day_start_trades = _b.total_trades
 
+        w = 0.0
+        w_end = __import__("random").gauss(0, 1)
         for tick in range(ticks_per):
-            t = (tick + 1) / ticks_per
-            bridge = o + (c - o) * t
-            noise = phi * noise_prev + random.gauss(0, per_tick_vol)
+            if not _loop_active:
+                return
+            t_ = (tick + 1) / ticks_per
+            trend = o + (c - o) * t_
+            dt_tick = 1.0 / ticks_per
+            dw = __import__("random").gauss(0, dt_tick ** 0.5)
+            w += dw
+            bridge = (w - t_ * w_end) * daily_range * 0.4
+            noise = phi * noise_prev + __import__("random").gauss(0, per_tick_vol * 0.3)
             noise_prev = noise
-            mid_p = max(l, min(h, bridge + noise))
+            mid_p = max(l, min(h, trend + bridge + noise))
+
+            pip_move = abs(mid_p - prev_mid_for_atr) / PIP
+            prev_mid_for_atr = mid_p
+            atr_short.append(pip_move)
+            atr_long.append(pip_move)
+            reactive_alert = None
+            if len(atr_short) >= 60 and len(atr_long) >= 1440:
+                short_avg = sum(atr_short) / len(atr_short)
+                long_avg = sum(atr_long) / len(atr_long)
+                ratio = short_avg / max(long_avg, 0.01)
+                if ratio > 5.0 and day_idx != reactive_alert_day:
+                    reactive_alert_day = day_idx
+                    reactive_alert = {"level": "CRITICAL", "msg": f"Extreme volatility — ATR ratio {ratio:.1f}x, {short_avg:.0f}pip/tick", "pips": round(short_avg * 1440), "event": ""}
+                elif ratio > 3.0 and day_idx != reactive_alert_day:
+                    reactive_alert_day = day_idx
+                    reactive_alert = {"level": "WARNING", "msg": f"Volatility spike — ATR ratio {ratio:.1f}x, {short_avg:.0f}pip/tick", "pips": round(short_avg * 1440), "event": ""}
 
             bid = mid_p - spread / 2
             ask = mid_p + spread / 2
             update_atr(mid_p)
-            dt = day_start + timedelta(seconds=day_seconds + int(tick * res / ticks_per))
+            dt = day_start + __import__("datetime").timedelta(seconds=day_seconds + int(tick * res / ticks_per))
             grid = build_grid(mid_p)
             tick_prices(bid, ask, grid, dt)
             grid_hits(grid, mid_p)
@@ -235,6 +401,7 @@ async def tick_loop():
             acct = account_summary()
             pos = open_positions(bid, ask, dt)
 
+            vol_alert = vol_alerts.get(day_idx) if tick == 0 else (reactive_alert if tick % 60 == 0 else None)
             msg = {
                 "bid": round(bid, 2), "ask": round(ask, 2), "mid": round(mid_p, 2),
                 "spread": round(spread, 2), "grid": grid,
@@ -242,7 +409,7 @@ async def tick_loop():
                 "hit_log": list(__import__("broker").hit_log[-20:]),
                 "speed": speed_multiplier, "tick": tick_count,
                 "sim_time": dt.strftime("%Y %b %d %H:%M:%S"),
-                "vol_alert": vol_alerts.get(day_idx) if tick == 0 else None,
+                "vol_alert": vol_alert,
                 **acct,
             }
             now_m = time.time()
@@ -255,9 +422,12 @@ async def tick_loop():
         asyncio.ensure_future(broadcast({"type": "daily_pnl", "date": day["date"][:10], "pnl": daily_pnl, "trades": daily_trades}))
     asyncio.ensure_future(broadcast({"type": "done", "sim_time": dt.strftime("%Y %b %d %H:%M:%S"), "tick": tick_count, "balance": acct.get("balance"), "equity": acct.get("equity"), "total_pnl": acct.get("total_pnl"), "total_trades": acct.get("total_trades"), "wins": acct.get("wins"), "losses": acct.get("losses"), "max_dd": acct.get("drawdown")}))
     await asyncio.sleep(15)
-    asyncio.ensure_future(tick_loop())
+    if _loop_active:
+        asyncio.ensure_future(tick_loop())
 
 async def on_startup(app):
+    global _loop_active
+    _loop_active = True
     asyncio.ensure_future(tick_loop())
 
 def main():
@@ -266,6 +436,9 @@ def main():
     app.router.add_get("/stream", stream_handler)
     app.router.add_get("/simulate", simulate_handler)
     app.router.add_post("/sim-keyframes", sim_keyframes_handler)
+    app.router.add_post("/speed", set_speed)
+    app.router.add_post("/restart", restart_sim)
+    app.router.add_post("/preset", set_preset)
     app.router.add_get("/", index)
     app.router.add_get("/{path:.*}", static_handler)
     web.run_app(app, host="127.0.0.1", port=3001)

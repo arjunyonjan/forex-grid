@@ -76,6 +76,60 @@ test.describe("Grid Bot Dashboard", () => {
     await page.locator("button:has-text('Moves')").click();
     await expect(page.locator("#tab-moves")).toHaveClass(/active/);
   });
+
+  test("settings gear button exists", async ({ page }) => {
+    await expect(page.locator("button[title='Settings']")).toBeVisible();
+  });
+
+  test("settings panel opens on gear click", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await expect(page.locator("text=Sim Speed")).toBeVisible();
+    await expect(page.locator("text=Restart Sim")).toBeVisible();
+  });
+
+  test("settings panel shows max trade days", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await expect(page.locator("text=Max Trade Duration")).toBeVisible();
+  });
+
+  test("settings panel shows grid params", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await expect(page.locator("#settingsPanel")).toContainText("401");
+  });
+
+  test("AI badge exists in header", async ({ page }) => {
+    await expect(page.locator("#aiBadge")).toBeAttached();
+  });
+
+  test("AI detail panel hidden by default", async ({ page }) => {
+    const detail = page.locator("#aiDetail");
+    await expect(detail).toBeHidden();
+  });
+
+  test("settings overlay closes panel", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await expect(page.locator("text=Sim Speed")).toBeVisible();
+    await page.locator("#settingsOverlay").click({ force: true });
+    await expect(page.locator("text=Sim Speed")).not.toBeVisible();
+  });
+
+  test("preset buttons exist in sidebar", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await expect(page.locator("text=History Presets")).toBeVisible();
+    await expect(page.locator("text=Ukraine War")).toBeVisible();
+    await expect(page.locator("text=130K Crash")).toBeVisible();
+  });
+
+  test("preset click loads Ukraine sim", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await page.locator("button:has-text('Ukraine War')").click();
+    await expect(page.locator("#speedDisplay")).not.toContainText("1x");
+  });
+
+  test("preset shows 130K Crash", async ({ page }) => {
+    await page.locator("button[title='Settings']").click();
+    await expect(page.locator("text=Jan-Mar 26 ★")).toBeVisible();
+  });
 });
 
 test.describe("Forex Grid Research Page", () => {
@@ -136,5 +190,37 @@ test.describe("Forex Grid Research Page", () => {
     }
     expect(hasGreen).toBe(true);
     expect(hasRed).toBe(true);
+  });
+
+  test("grid psychology section exists", async ({ page }) => {
+    await expect(page.locator("text=Grid Psychology")).toBeVisible();
+  });
+
+  test("grid psychology shows kill switch info", async ({ page }) => {
+    await expect(page.locator("text=MAX_TRADE_DAYS")).toBeVisible();
+  });
+
+  test("grid psychology shows 30-day kill", async ({ page }) => {
+    await expect(page.locator("text=30-Day Kill Switch").first()).toBeVisible();
+  });
+
+  test("vol radar section exists", async ({ page }) => {
+    await expect(page.locator("text=Vol Radar")).toBeVisible();
+  });
+
+  test("vol radar has slider", async ({ page }) => {
+    await expect(page.locator("#volSlider")).toBeVisible();
+  });
+
+  test("ai forecaster section exists", async ({ page }) => {
+    await expect(page.locator("text=AI Forecaster")).toBeVisible();
+  });
+
+  test("ai forecaster shows SVB warning", async ({ page }) => {
+    await expect(page.locator("text=SVB").first()).toBeVisible();
+  });
+
+  test("ai forecaster shows CRITICAL 2026 warning", async ({ page }) => {
+    await expect(page.locator("text=CRITICAL").first()).toBeVisible();
   });
 });

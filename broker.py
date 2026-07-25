@@ -45,6 +45,7 @@ DD_HALVE_THRESHOLD = 5.0
 DD_STOP_THRESHOLD = 10.0
 BASE_LOT = 0.001
 MAX_BIAS = 20
+MAX_TRADE_DAYS = 30
 
 orders = []
 trades = []
@@ -254,6 +255,25 @@ def tick_prices(bid, ask, grid, now=None):
 
     remaining = []
     for t in trades:
+        if t.filled:
+            t_now = now or time.time()
+            if hasattr(t_now, "strftime"):
+                t_sec = t.filled.timestamp() if hasattr(t.filled, "timestamp") else t.filled
+                n_sec = t_now.timestamp()
+            else:
+                t_sec = t.filled.timestamp() if hasattr(t.filled, "timestamp") else t.filled
+                n_sec = t_now
+            dur = n_sec - t_sec
+            if dur > MAX_TRADE_DAYS * 86400:
+                gross = (mid - t.price) / 0.01 * PIP_VALUE * lot_size if t.side == "buy" else (t.price - mid) / 0.01 * PIP_VALUE * lot_size
+                exit_cost = round(abs(ask - bid) + COMMISSION, 2)
+                pnl = gross - exit_cost - abs(t.cost)
+                balance += pnl
+                total_losses_cumulative += 1
+                cumulative_loss_pnl += pnl
+                _write_trade_log(t.side.upper(), t.price, round(mid, 2), pnl, gross, exit_cost + abs(t.cost), "TIMEOUT", _fmt_dur(t.filled, now))
+                hit_log.append({"t": time.strftime("%H:%M:%S"), "side": "TIMEOUT", "price": round(mid, 2), "pnl": round(pnl, 2), "dur": _fmt_dur(t.filled, now)})
+                continue
         if t.side == "buy" and mid >= t.tp:
             gross = (t.tp - t.price) / 0.01 * PIP_VALUE * lot_size
             exit_cost = round(abs(ask - bid) + COMMISSION, 2)
@@ -343,7 +363,7 @@ def grid_hits(grid, mid, gs=None):
         place_order(side, lvl, tp, idx)
 
 
-def simulate(hours=24, start_price=4050.0):
+def simulate(hours=24, start_price=4050.0, spacing=200, init_bal=10000.0):
     import copy
     saved = copy.deepcopy({
         "orders": orders, "trades": trades, "balance": balance,
