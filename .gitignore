@@ -1,0 +1,9 @@
+__pycache__/
+node_modules/
+*.bak
+*.pyc
+test-results/
+trades.csv
+google-cred.json
+google-token.json
+node_modules/.package-lock.json

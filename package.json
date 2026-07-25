@@ -1,0 +1,7 @@
+{
+  "name": "forex-grid",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}
