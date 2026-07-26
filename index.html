@@ -623,11 +623,11 @@ function restartSim(){
   chartData=[];tickBuf=[];_15marks=[];_last15=-1;_baselinePnl=null;_baselineWins=null;_baselineLosses=null;
   var cvs=$("chart");if(cvs){var ctx=cvs.getContext("2d");ctx.clearRect(0,0,cvs.width,cvs.height)}
   var rl=$("restartOverlay");if(rl){rl.style.display="flex";rl.style.zIndex=200}
-  var rb=$("restartBar");if(rb){var p=0;var iv=setInterval(function(){p+=Math.min(8,98-p);if(rb)rb.style.width=Math.min(p,99)+"%";if(p>=98)clearInterval(iv)},200)}
+  var rb=$("restartBar");if(rb){var p=0;var iv=setInterval(function(){p+=Math.min(15,98-p);if(rb)rb.style.width=Math.min(p,99)+"%";if(p>=98)clearInterval(iv)},150)}
   toggleSettings();
-  // Safety auto-hide after 10s
+  // Safety auto-hide after 3s
   if(window._restartTimer)clearTimeout(window._restartTimer);
-  window._restartTimer=setTimeout(function(){var o=$("restartOverlay");if(o)o.style.display="none"},10000);
+  window._restartTimer=setTimeout(function(){var o=$("restartOverlay");if(o)o.style.display="none"},3000);
   if(es){es.close()}
   fetch("/restart",{method:"POST"}).then(function(){setTimeout(connect,500)}).catch(function(){setTimeout(connect,500)});
 }
@@ -668,10 +668,10 @@ var presets=[
 })();
 function loadPreset(name){
   var rl=$("restartOverlay");if(rl){rl.style.display="flex";rl.style.zIndex=200}
-  var rb=$("restartBar");if(rb){var p=0;var iv=setInterval(function(){p+=Math.min(8,98-p);if(rb)rb.style.width=Math.min(p,99)+"%";if(p>=98)clearInterval(iv)},200)}
+  var rb=$("restartBar");if(rb){var p=0;var iv=setInterval(function(){p+=Math.min(15,98-p);if(rb)rb.style.width=Math.min(p,99)+"%";if(p>=98)clearInterval(iv)},150)}
   toggleSettings();
   if(window._restartTimer)clearTimeout(window._restartTimer);
-  window._restartTimer=setTimeout(function(){var o=$("restartOverlay");if(o)o.style.display="none"},10000);
+  window._restartTimer=setTimeout(function(){var o=$("restartOverlay");if(o)o.style.display="none"},3000);
   if(es){es.close()}
   fetch("/preset",{method:"POST",body:JSON.stringify({name:name})}).then(function(){setTimeout(connect,500)}).catch(function(){setTimeout(connect,500)});
 }
