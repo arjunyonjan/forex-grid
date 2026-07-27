@@ -283,16 +283,27 @@ details[open] summary{margin-bottom:3px}
     <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Base Lot</span><span style="font-weight:600">0.001</span></div>
     <div style="display:flex;justify-content:space-between"><span>DD Halt</span><span style="font-weight:600">10%</span></div>
   </div>
+  <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bd);font-size:10px;color:var(--fg2)">
+    <div style="font-size:11px;font-weight:500;margin-bottom:8px;color:var(--fg)">Live Config</div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>ATR</span><span style="font-weight:600;font-family:monospace" id="liveAtr">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Spacing / TP</span><span style="font-weight:600;font-family:monospace" id="liveSpacingTp">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Min/Max</span><span style="font-weight:600;font-family:monospace" id="liveMinMax">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>ATR Div / TP Mult</span><span style="font-weight:600;font-family:monospace" id="liveDivMult">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Spread (base / dynamic)</span><span style="font-weight:600;font-family:monospace" id="liveSpread">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Base Lot</span><span style="font-weight:600;font-family:monospace" id="liveLot">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Dynamic Spread</span><span style="font-weight:600;font-family:monospace" id="liveDynSpread">--</span></div>
+    <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--hl)"><span>Actual Spread Now</span><span style="font-weight:600;font-family:monospace;color:var(--orng)" id="liveSpreadNow">--</span></div>
+  </div>
 
   <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bd)">
     <details style="font-size:10px;color:var(--fg2)">
       <summary style="cursor:pointer;font-weight:600;font-size:11px;color:var(--fg);padding:4px 0">ℹ Grid Parameter Guide</summary>
       <div style="margin-top:8px;line-height:1.7">
-        <div style="margin-bottom:8px"><b style="color:var(--grn)">MIN SPACING</b> <span style="color:var(--fg2)">1500</span><br><span style="font-size:9px">Minimum gap between grid levels. Prevents overtrading in low volatility. Acts as a floor — spacing never goes below this.</span></div>
-        <div style="margin-bottom:8px"><b style="color:var(--yel)">MAX SPACING</b> <span style="color:var(--fg2)">5000</span><br><span style="font-size:9px">Maximum gap between grid levels. Caps grid width during extreme volatility so orders aren’t too far apart.</span></div>
-        <div style="margin-bottom:8px"><b style="color:var(--cyn)">ATR DIVISOR</b> <span style="color:var(--fg2)">2.0</span><br><span style="font-size:9px">Sensitivity control. Lower = wider spacing for same ATR. Formula: <code style="background:var(--hl);padding:1px 4px;border-radius:3px">spacing = max(MIN, min(MAX, ATR / DIVISOR))</code></span></div>
-        <div style="margin-bottom:8px"><b style="color:var(--orng)">TP MULTIPLIER</b> <span style="color:var(--fg2)">1.0</span><br><span style="font-size:9px">Take-profit as a ratio of spacing. 1.0 means TP = spacing. Higher values increase win size per trade at the cost of fewer hits.</span></div>
-        <div style="margin-bottom:8px"><b style="color:var(--fg)">BASE LOT</b> <span style="color:var(--fg2)">0.01</span><br><span style="font-size:9px">Position size per grid level. At 0.01, each pip move = $0.10. A 1500-pip win = ~$15 per position.</span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--grn)">MIN SPACING</b> <span style="color:var(--fg2);font-family:monospace" id="guideMinSp">--</span><br><span style="font-size:9px">Minimum gap between grid levels. Prevents overtrading in low volatility. Acts as a floor — spacing never goes below this.</span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--yel)">MAX SPACING</b> <span style="color:var(--fg2);font-family:monospace" id="guideMaxSp">--</span><br><span style="font-size:9px">Maximum gap between grid levels. Caps grid width during extreme volatility so orders aren’t too far apart.</span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--cyn)">ATR DIVISOR</b> <span style="color:var(--fg2);font-family:monospace" id="guideAtrDiv">--</span><br><span style="font-size:9px">Sensitivity control. Lower = wider spacing for same ATR. Formula: <code style="background:var(--hl);padding:1px 4px;border-radius:3px">spacing = max(MIN, min(MAX, ATR / DIVISOR))</code></span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--orng)">TP MULTIPLIER</b> <span style="color:var(--fg2);font-family:monospace" id="guideTpMult">--</span><br><span style="font-size:9px">Take-profit as a ratio of spacing. 1.0 means TP = spacing. Higher values increase win size per trade at the cost of fewer hits.</span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--fg)">BASE LOT</b> <span style="color:var(--fg2);font-family:monospace" id="guideLot">--</span><br><span style="font-size:9px">Position size per grid level. At 0.01, each pip move = $0.10. A 1500-pip win = ~$15 per position.</span></div>
         <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--hl);font-size:9px;color:var(--fg2)">All values update in real-time via SSE from the running simulation. Config constants are in <code style="background:var(--hl);padding:1px 4px;border-radius:3px">broker.py</code>.</div>
       </div>
     </details>
@@ -439,6 +450,19 @@ function renderAll(d){
     $("duration").textContent=parts.join(" ");
     $("etaSpan").textContent="";
   }
+  if(d.atr!=null){$("liveAtr").textContent=d.atr.toFixed(1)+" pips"}
+  if(d.spacing!=null&&d.tp!=null){$("liveSpacingTp").textContent=d.spacing+"/"+d.tp+" pip"}
+  if(d.min_spacing!=null&&d.max_spacing!=null){$("liveMinMax").textContent=d.min_spacing+"/"+d.max_spacing}
+  if(d.atr_divisor!=null&&d.tp_multiplier!=null){$("liveDivMult").textContent=d.atr_divisor+"/"+d.tp_multiplier}
+  if(d.base_spread!=null&&d.dynamic_spread!=null){$("liveSpread").textContent=d.base_spread+" pip / "+(d.dynamic_spread?"Yes (ATR×0.1)":"No")}
+  if(d.dynamic_spread!=null){$("liveDynSpread").textContent=d.dynamic_spread?"Yes (ATR×0.1, 20-150 pip)":"No (fixed "+d.base_spread+" pip)"}
+  if(d.base_lot!=null){$("liveLot").textContent=d.base_lot}
+  $("liveSpreadNow").textContent=d.spread+" pip"
+  if(d.min_spacing!=null){$("guideMinSp").textContent=d.min_spacing}
+  if(d.max_spacing!=null){$("guideMaxSp").textContent=d.max_spacing}
+  if(d.atr_divisor!=null){$("guideAtrDiv").textContent=d.atr_divisor}
+  if(d.tp_multiplier!=null){$("guideTpMult").textContent=d.tp_multiplier}
+  if(d.base_lot!=null){$("guideLot").textContent=d.base_lot}
   var bid=d.bid||0,ask=d.ask||0,mid=d.mid||0;
   var eq=d.equity||0,b=d.balance||0,dd=d.drawdown||0,pnl=d.pnl_today||0;
   $("priceVal").textContent=""+bid.toFixed(2);

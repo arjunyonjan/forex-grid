@@ -93,6 +93,8 @@ def get_params():
         "atr_divisor": ATR_DIVISOR,
         "tp_multiplier": TP_MULTIPLIER,
         "base_lot": BASE_LOT,
+        "base_spread": BASE_SPREAD,
+        "dynamic_spread": bool(DYNAMIC_SPREAD),
     }
 
 def get_safety_status():
