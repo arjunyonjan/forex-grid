@@ -265,7 +265,9 @@ details[open] summary{margin-bottom:3px}
     <div id="restartBar" style="height:100%;width:0%;background:var(--cyn);border-radius:4px;transition:width .3s"></div>
   </div>
 </div>
-<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<style>@keyframes spin{to{transform:rotate(360deg)}}
+.config-strip{display:flex;gap:0;padding:3px 6px;font-size:10px;overflow-x:auto;border-top:1px solid var(--hl);margin-top:2px;background:var(--hl)}.config-strip .cfg-item{display:flex;gap:4px;align-items:center;white-space:nowrap;padding:0 6px;border-right:1px solid var(--bd)}.config-strip .cfg-item:last-child{border-right:none}.config-strip .cfg-lbl{color:var(--fg2);font-size:9px}.config-strip .cfg-val{color:var(--grn);font-weight:700;font-size:10px}
+</style>
 <div id="settingsOverlay" onclick="toggleSettings()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:99"></div>
 <div id="settingsPanel" style="display:none;position:fixed;top:0;right:0;width:280px;height:100%;z-index:100;background:var(--bg2);border-left:1px solid var(--bd);padding:16px;overflow-y:auto;box-shadow:-4px 0 20px rgba(0,0,0,0.3)">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -274,11 +276,11 @@ details[open] summary{margin-bottom:3px}
   </div>
   <div style="margin-bottom:16px">
     <div style="font-size:11px;font-weight:500;margin-bottom:8px;color:var(--fg2)">Sim Speed</div>
-    <input type="range" min="0" max="5" value="4" step="1" id="speedSlider" style="width:100%;accent-color:var(--cyn)" oninput="updateSpeed(this)">
+    <input type="range" min="0" max="6" value="5" step="1" id="speedSlider" style="width:100%;accent-color:var(--cyn)" oninput="updateSpeed(this)">
     <div style="display:flex;justify-content:space-between;font-size:10px;margin-top:4px;color:var(--fg2)">
-      <span>1×</span><span>10×</span><span>50×</span><span>100×</span><span>1K×</span><span>10K×</span>
+      <span>1×</span><span>10×</span><span>50×</span><span>100×</span><span>500×</span><span>1K×</span><span>10K×</span>
     </div>
-    <div style="text-align:center;font-size:13px;font-weight:700;margin-top:6px" id="speedLabel">1000×</div><div style="text-align:center;font-size:10px;color:var(--fg2);margin-top:2px" id="speedHint">1 real sec = 17 min</div>
+    <div style="text-align:center;font-size:13px;font-weight:700;margin-top:6px" id="speedLabel">500×</div><div style="text-align:center;font-size:10px;color:var(--fg2);margin-top:2px" id="speedHint">1 real sec = 8 min</div>
   </div>
   <button onclick="restartSim()" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--bd);background:var(--bg2);color:var(--fg);cursor:pointer;font:inherit;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 3.5a7 7 0 11-1.5-1.5"/><path d="M13 0v3.5H9.5"/></svg> Restart Sim</button>
   <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bd)">
@@ -449,7 +451,7 @@ function renderAll(d){
   $("simTime").textContent=d.sim_time||"--:--:--";
   var spd=d.speed||1;
   $("speedDisplay").textContent=spd>=1000000?Math.floor(spd/1000000)+"Mx":spd>=1000?Math.floor(spd/1000)+"Kx":spd+"x";$("speedHint").textContent=speedHint(spd);
-  var spds=[1,10,50,100,1000,10000];
+  var spds=[1,10,50,100,500,1000,10000];
   var spi=spds.indexOf(spd);if(spi>=0){$("speedSlider").value=spi;$("speedLabel").textContent=spds[spi]+"\u00d7"}
   if(d.elapsed_seconds!=null){
     var s=d.elapsed_seconds,m=Math.floor(s/60)%60,h=Math.floor(s/3600)%24,d2=Math.floor(s/86400)%7,w=Math.floor(s/604800);
@@ -656,7 +658,7 @@ function toggleSettings(){
   if(o)o.style.display=show?"block":"none";
   // Sync slider with current speed
   if(show){
-    var speeds=[1,10,50,100,1000,10000];
+    var speeds=[1,10,50,100,500,1000,10000];
     var val=$("speedDisplay").textContent;
     var idx=3;
     for(var i=0;i<speeds.length;i++){
@@ -667,7 +669,7 @@ function toggleSettings(){
   }
 }
 function updateSpeed(el){
-  var speeds=[1,10,50,100,1000,10000];
+  var speeds=[1,10,50,100,500,1000,10000];
   var s=speeds[parseInt(el.value)];
   $("speedLabel").textContent=s+"\u00d7";$("speedHint").textContent=speedHint(s);$("speedHint").textContent=speedHint(s);
   fetch("/speed",{method:"POST",body:JSON.stringify({speed:s})}).catch(function(){});
