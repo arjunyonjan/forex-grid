@@ -16,7 +16,7 @@ last_broadcast = 0.0
 def load_keyframes():
     sources = []
     basedir = Path(__file__).parent
-    for fname, res in [("gcf_1m.json", 60), ("gcf_5m.json", 300), ("gcf_15m.json", 900), ("gcf_1h.json", 3600), ("gcf_daily.json", 86400)]:
+    for fname, res in [("gcf_1m.json", 60), ("gcf_5m.json", 300), ("gcf_15m.json", 900), ("gcf_1h.json", 3600), ("gcf_daily.json", 86400), ("gcf_ukraine_hourly.json", 3600)]:
         p = basedir / fname
         if p.exists():
             data = json.loads(p.read_text())
@@ -252,19 +252,91 @@ async def sim_keyframes_handler(request):
 
 async def results_handler(request):
     import broker as _b
+    now_t = time.time()
+    with open("/dev/null", "w") as _:
+        pos = _b.open_positions(0, 0, now_t)
     return web.json_response({
-        account: _b.account_summary(),
-        open_trades: [{
-            id: t.id, side: t.side, entry: t.entry, size: t.size,
-            pnl: t.pnl, sl: t.sl, tp: t.tp, age_days: t.age_days,
-            close_pct: getattr(t, close_pct, 0),
-            days_since_open: getattr(t, days_since_open, 0),
-        } for t in _b.trades],
-        hit_log: list(_b.hit_log),
-        closed_trades: list(_b.closed_trades),
-        preset: current_preset_label,
-        params: _b.get_params(),
+        "account": _b.account_summary(),
+        "open_trades": pos,
+        "hit_log": list(_b.hit_log),
+        "closed_trades": list(_b.closed_trades),
+        "preset": current_preset_label,
+        "params": _b.get_params(),
     })
+
+def _parse_bar_date(date_str):
+    s = date_str[:16]
+    if len(s) == 10:
+        s += " 00:00"
+    return __import__("datetime").datetime.strptime(s, "%Y-%m-%d %H:%M")
+
+def run_headless(preset_name):
+    import json, time, sys
+    from pathlib import Path
+    import broker as _b
+    p = PRESETS.get(preset_name)
+    if not p:
+        return {"error": f"Unknown preset: {preset_name}"}
+    all_kf = load_keyframes()
+    res_filter = p.get("res")
+    kf_pool = [k for k in all_kf if k.get("res") == res_filter] if res_filter else all_kf
+    kf = [k for k in kf_pool if p["start"] <= k["date"][:10] <= p["end"] and not (k["open"] == k["high"] == k["low"] == k["close"])]
+    if not kf:
+        return {"error": f"No data for {preset_name} ({p['start']} to {p['end']})"}
+    _b.TREND_FILTER_ENABLED = True
+    _b.TREND_HEDGE_DISABLE = False
+    _b.HEDGE_CLOSE_ENABLED = True
+    _b.balance = _b.start_balance = _b.equity_peak = 1000000.0
+    _b.orders.clear(); _b.trades.clear(); _b.hit_log.clear(); _b.closed_trades.clear()
+    _b.mr_price_history.clear(); _b.current_sma = 0.0
+    _b.current_atr = _b._atr_raw = 5.0; _b.current_spacing = 1500
+    _b.current_tp = round(_b.current_spacing * _b.TP_MULTIPLIER)
+    _b.daily_trade_count = 0; _b.total_trades = 0; _b.lot_size = _b.BASE_LOT
+    _b.place_orders(kf[0]["open"])
+    for idx, bar in enumerate(kf):
+        o, h, l, c = bar["open"], bar["high"], bar["low"], bar["close"]
+        _b.update_atr(bar_range=max(h - l, 0.1))
+        spread = max(20, min(150, _b.current_atr * 0.1)) if _b.DYNAMIC_SPREAD else _b.BASE_SPREAD
+        ts = _parse_bar_date(bar["date"])
+        for mid_p in _b._walk_bar(o, h, l, c, pip_step=100):
+            _b.update_sma(mid_p)
+            _b.tick_prices(mid_p - spread/2, mid_p + spread/2, ts)
+    acct = _b.account_summary()
+    wins = sum(1 for h in _b.hit_log if h.get("pnl",0) > 0)
+    losses = sum(1 for h in _b.hit_log if h.get("pnl",0) < 0)
+    won = round(sum(h["pnl"] for h in _b.hit_log if h["pnl"] > 0), 2)
+    lost = round(sum(h["pnl"] for h in _b.hit_log if h["pnl"] < 0), 2)
+    tp_hits = sum(1 for h in _b.hit_log if "TP-" in h.get("side",""))
+    hedge = sum(1 for h in _b.hit_log if "HEDGE" in h.get("side",""))
+    cleanup = sum(1 for h in _b.hit_log if "CLEANUP" in h.get("side",""))
+    return {
+        "preset": preset_name, "label": p["label"],
+        "start": p["start"], "end": p["end"],
+        "bars": len(kf),
+        "start_balance": 1000000.0,
+        "end_balance": _b.balance,
+        "end_equity": acct.get("equity"),
+        "total_pnl": round(_b.balance - 1000000, 2),
+        "return_pct": acct["return_pct"],
+        "max_dd": acct["drawdown"],
+        "total_trades": acct["total_trades"],
+        "wins": wins, "losses": losses,
+        "win_pnl": won, "loss_pnl": lost,
+        "pf": round(abs(won/lost), 2) if lost else 999,
+        "tp_hits": tp_hits, "hedge_closes": hedge, "cleanups": cleanup,
+        "final_atr": _b.current_atr, "final_spacing": _b.current_spacing,
+    }
+
+_report_cache = {}
+
+async def report_handler(request):
+    preset_name = request.match_info.get("preset", "")
+    if preset_name in _report_cache:
+        return web.json_response(_report_cache[preset_name])
+    result = await asyncio.to_thread(run_headless, preset_name)
+    if "error" not in result:
+        _report_cache[preset_name] = result
+    return web.json_response(result)
 
 async def index(request):
     resp = web.FileResponse(Path(__file__).parent / "index.html")
@@ -458,7 +530,23 @@ async def tick_loop():
         _b.current_spacing = max(MIN_SPACING, min(MAX_SPACING, round(_b.current_atr / ATR_DIVISOR)))
         _b.current_tp = max(_b.current_spacing + 1, round(_b.current_spacing * TP_MULTIPLIER))
         asyncio.ensure_future(broadcast({"type": "daily_pnl", "date": day["date"][:10], "pnl": daily_pnl, "trades": daily_trades}))
-    asyncio.ensure_future(broadcast({"type": "done", "sim_time": dt.strftime("%Y %b %d %H:%M:%S"), "tick": tick_count, "balance": acct.get("balance"), "equity": acct.get("equity"), "total_pnl": acct.get("total_pnl"), "total_trades": acct.get("total_trades"), "wins": acct.get("wins"), "losses": acct.get("losses"), "max_dd": acct.get("drawdown")}))
+    wins_c = sum(1 for h in __import__("broker").hit_log if h.get("pnl",0) > 0)
+    losses_c = sum(1 for h in __import__("broker").hit_log if h.get("pnl",0) < 0)
+    won_c = round(sum(h["pnl"] for h in __import__("broker").hit_log if h["pnl"] > 0), 2)
+    lost_c = round(sum(h["pnl"] for h in __import__("broker").hit_log if h["pnl"] < 0), 2)
+    tp_c = sum(1 for h in __import__("broker").hit_log if "TP-" in h.get("side",""))
+    hedge_c = sum(1 for h in __import__("broker").hit_log if "HEDGE" in h.get("side",""))
+    cleanup_c = sum(1 for h in __import__("broker").hit_log if "CLEANUP" in h.get("side",""))
+    asyncio.ensure_future(broadcast({"type": "done", "label": current_preset_label,
+        "sim_time": dt.strftime("%Y %b %d %H:%M:%S"), "tick": tick_count,
+        "balance": acct.get("balance"), "equity": acct.get("equity"),
+        "total_pnl": acct.get("total_pnl"), "return_pct": acct.get("return_pct"),
+        "total_trades": acct.get("total_trades"),
+        "wins": wins_c, "losses": losses_c, "win_pnl": won_c, "loss_pnl": lost_c,
+        "pf": round(abs(won_c/lost_c),2) if lost_c else 999,
+        "tp_hits": tp_c, "hedge_closes": hedge_c, "cleanups": cleanup_c,
+        "max_dd": acct.get("drawdown"),
+    }))
     _loop_active = False
 
 async def on_startup(app):
@@ -475,6 +563,7 @@ def main():
     app.router.add_post("/preset", set_preset)
     app.router.add_get("/results", results_handler)
     app.router.add_post("/toggle_trend_filter", toggle_trend_filter)
+    app.router.add_get("/report/{preset}", report_handler)
     app.router.add_get("/", index)
     app.router.add_get("/{path:.*}", static_handler)
     web.run_app(app, host="127.0.0.1", port=3001)

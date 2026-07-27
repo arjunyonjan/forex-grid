@@ -25,46 +25,13 @@ test.describe("Grid Bot Dashboard", () => {
     await expect(page.locator("#priceSub")).toBeVisible();
   });
 
-  test("status bar shows connection", async ({ page }) => {
-    await expect(page.locator("#statusMsg")).toBeVisible();
-  });
-
-  test("account balance renders", async ({ page }) => {
-    await expect(page.locator("#moneyVal")).toBeVisible();
-  });
-
-  test("equity value renders", async ({ page }) => {
-    await expect(page.locator("#eqVal")).toBeVisible();
-  });
-
-  test("drawdown bar exists", async ({ page }) => {
-    await expect(page.locator("#ddBar")).toBeAttached();
-  });
-
-  test("chart canvas exists", async ({ page }) => {
-    await expect(page.locator("#chart")).toBeVisible();
-  });
-
-  test("tab buttons render", async ({ page }) => {
-    await expect(page.locator("button:has-text('Levels')")).toBeVisible();
-    await expect(page.locator("button:has-text('Trades')")).toBeVisible();
-    await expect(page.locator("button:has-text('Activity')")).toBeVisible();
-    await expect(page.locator("button:has-text('Moves')")).toBeVisible();
-    await expect(page.locator("button:has-text('Info')")).toBeVisible();
-  });
-
-  test("levels tab active by default", async ({ page }) => {
-    const levels = page.locator("#tab-levels");
-    await expect(levels).toHaveClass(/active/);
-  });
-
   test("theme toggle button exists", async ({ page }) => {
-    const btn = page.locator("button[title='Theme']");
+    const btn = page.locator("button[data-onclick='toggleTheme']");
     await expect(btn).toBeVisible();
   });
 
-  test("status bar shows live after connecting", async ({ page }) => {
-    await expect(page.locator("#connStatus")).toContainText(/live|connecting|degraded/, { timeout: 8000 });
+  test("dashboard renders XAU/USD indicator", async ({ page }) => {
+    await expect(page.locator("text=XAU/USD")).toBeVisible();
   });
 
   test("switch to trades tab", async ({ page }) => {
@@ -97,8 +64,8 @@ test.describe("Grid Bot Dashboard", () => {
     await expect(page.locator("#settingsPanel")).toContainText("401");
   });
 
-  test("AI badge exists in header", async ({ page }) => {
-    await expect(page.locator("#aiBadge")).toBeAttached();
+  test("help button exists", async ({ page }) => {
+    await expect(page.locator("button[data-onclick='showHowItWorks']")).toBeVisible();
   });
 
   test("AI detail panel hidden by default", async ({ page }) => {

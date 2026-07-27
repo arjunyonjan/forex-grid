@@ -253,6 +253,12 @@ details[open] summary{margin-bottom:3px}
         <span style="font-size:10px;color:var(--fg2)" id="monthlyCount"></span>
       </div>
       <div class="moves-list" id="monthlyList"></div>
+      <div style="margin-top:8px;border-top:1px solid var(--bd);padding-top:6px">
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <span style="font-size:10px;color:var(--fg2)">Monthly P&amp;L</span>
+        </div>
+        <div id="monthlyPnlList"></div>
+      </div>
     </div>
     <div id="tab-dailyPnL" class="tab-panel">
       <div style="display:flex;gap:4px;margin-bottom:4px">
@@ -328,7 +334,7 @@ details[open] summary{margin-bottom:3px}
   </div>
 </div>
 <script>
-var _ct=0,_lc2=0,_latestData=null,_rp=false,tickBuf=[],themes=["light","dark","mid"],themeIdx=0,_last15=-1,_15marks=[],chartData=[],maxP=495,es=null,dailyMoves=[],dailyMovesMax=0,monthlyMoves=[],monthlyMovesMax=0,dailyPnlLog=[],dailyPnlCum=0,_lastHeavy=0,_lastDraw=0;
+var _ct=0,_lc2=0,_latestData=null,_rp=false,tickBuf=[],themes=["light","dark","mid"],themeIdx=0,_last15=-1,_15marks=[],chartData=[],maxP=495,es=null,dailyMoves=[],dailyMovesMax=0,monthlyMoves=[],monthlyMovesMax=0,dailyPnlLog=[],dailyPnlCum=0,monthlyPnl={},_lastHeavy=0,_lastDraw=0;
 function renderMoves(){
   var el=document.getElementById("movesList");
   if(!el||!dailyMoves.length){el.innerHTML='<div style="color:var(--fg2);font-size:11px;padding:4px">Waiting for data...</div>';return}
@@ -430,7 +436,7 @@ var _baselinePnl=null,_baselineWins=null,_baselineLosses=null,_baselineRealPnl=n
 function onMsg(d){
   if(d.type==="init"){
     dailyMoves=d.daily_moves||[];if(dailyMoves.length)dailyMovesMax=Math.max.apply(null,dailyMoves.map(function(m){return m.range}));renderMoves();
-    monthlyMoves=d.monthly_moves||[];if(monthlyMoves.length)monthlyMovesMax=Math.max.apply(null,monthlyMoves.map(function(m){return m.range}));renderMonthly();
+    monthlyMoves=d.monthly_moves||[];if(monthlyMoves.length)monthlyMovesMax=Math.max.apply(null,monthlyMoves.map(function(m){return m.range}));renderMonthly();monthlyPnl=d.monthly_pnl||{};renderMonthlyPnl();
     dailyPnlLog=[];dailyPnlCum=0;renderDailyPnl();
     chartData=[];tickBuf=[];_15marks=[];_last15=-1;_baselinePnl=null;_baselineWins=null;_baselineLosses=null;_lastHeavy=0;_lastDraw=0;
     var rl=$("restartOverlay");if(rl)rl.style.display="none";

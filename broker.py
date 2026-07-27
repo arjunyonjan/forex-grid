@@ -286,15 +286,19 @@ def tick_prices(bid, ask, now_t=None):
     mid_price = round((bid + ask) / 2, 2)
     update_trend_filter(mid_price)
     if TREND_FILTER_ENABLED and HEDGE_CLOSE_ENABLED and not _prev_hedge_state:
-        for t in trades[:]:
-            for h in trades[:]:
-                if h is not t and h.level_idx == t.level_idx and h.side != t.side:
-                    pnl = (h.price - bid) / PIP * PIP_VALUE * lot_size if h.side == 'sell' else (ask - h.price) / PIP * PIP_VALUE * lot_size
-                    balance += pnl
-                    hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'CLEANUP-' + h.side.upper(), 'entry': round(h.price, 2), 'exit': round(bid if h.side == 'sell' else ask, 2), 'price': round(bid if h.side == 'sell' else ask, 2), 'pnl': round(pnl, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
-                    trades.remove(h)
-                    _replenish_order(h.side, h.price, h.level_idx)
-                    break
+        by_level = {}
+        for tr in list(trades):
+            by_level.setdefault(tr.level_idx, []).append(tr)
+        for level, pair in by_level.items():
+            if len(pair) < 2:
+                continue
+            a, b = pair[0], pair[1]
+            h = b if a.side == 'buy' and b.side == 'sell' else a  # pick the wrong-side one
+            pnl = (h.price - bid) / PIP * PIP_VALUE * lot_size if h.side == 'sell' else (ask - h.price) / PIP * PIP_VALUE * lot_size
+            balance += pnl
+            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'CLEANUP-' + h.side.upper(), 'entry': round(h.price, 2), 'exit': round(bid if h.side == 'sell' else ask, 2), 'price': round(bid if h.side == 'sell' else ask, 2), 'pnl': round(pnl, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+            _remove_safe(trades, h)
+            _replenish_order(h.side, h.price, h.level_idx)
     _prev_hedge_state = HEDGE_CLOSE_ENABLED
     to_fill = []
     for o in orders[:]:
@@ -316,13 +320,13 @@ def tick_prices(bid, ask, now_t=None):
         if len(trades) >= MAX_POSITIONS:
             break
         trades.append(Trade(o.id, o.side, o.price, o.tp, o.level_idx, entry_time=now_ts))
-        orders.remove(o)
+        _remove_safe(orders, o)
         total_trades += 1
         daily_trade_count += 1
         hedge = next((x for x in orders if x.level_idx == o.level_idx and x.side != o.side), None)
         if hedge and len(trades) < MAX_POSITIONS:
             trades.append(Trade(hedge.id, hedge.side, hedge.price, hedge.tp, hedge.level_idx, entry_time=now_ts))
-            orders.remove(hedge)
+            _remove_safe(orders, hedge)
             total_trades += 1
             daily_trade_count += 1
     for t in trades[:]:
@@ -361,7 +365,7 @@ def tick_prices(bid, ask, now_t=None):
                     close_side = "HARDSTOP" if age_days >= HARD_STOP_DAYS else "EXPCLOSE"
                     hit_log.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": close_side + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "price": round(bid if t.side == "buy" else ask, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
                     closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": close_side + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
-                trades.remove(t)
+                _remove_safe(trades, t)
                 _replenish_order(t.side, t.price, t.level_idx)
                 continue
         # ---- Normal TP hit ----
@@ -373,7 +377,7 @@ def tick_prices(bid, ask, now_t=None):
                 balance += gross
                 hit_log.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "TP-BUY", "entry": round(t.price, 2), "exit": round(t.tp, 2), "price": round(t.tp, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
                 closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "TP-BUY", "entry": round(t.price, 2), "exit": round(t.tp, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
-                trades.remove(t)
+                _remove_safe(trades, t)
                 _replenish_order(t.side, t.price, t.level_idx)
                 if HEDGE_CLOSE_ENABLED:
                     for h in trades[:]:
@@ -382,7 +386,7 @@ def tick_prices(bid, ask, now_t=None):
                             balance += loss
                             hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(bid, 2), 'price': round(bid, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
                             closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(bid, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
-                            trades.remove(h)
+                            _remove_safe(trades, h)
                             _replenish_order(h.side, h.price, h.level_idx)
         else:
             pnl = (t.price - ask) / PIP * PIP_VALUE * lot_size
@@ -392,7 +396,7 @@ def tick_prices(bid, ask, now_t=None):
                 balance += gross
                 hit_log.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "TP-SELL", "entry": round(t.price, 2), "exit": round(t.tp, 2), "price": round(t.tp, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
                 closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "TP-SELL", "entry": round(t.price, 2), "exit": round(t.tp, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
-                trades.remove(t)
+                _remove_safe(trades, t)
                 _replenish_order(t.side, t.price, t.level_idx)
                 if HEDGE_CLOSE_ENABLED:
                     for h in trades[:]:
@@ -401,12 +405,16 @@ def tick_prices(bid, ask, now_t=None):
                             balance += loss
                             hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(ask, 2), 'price': round(ask, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
                             closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(ask, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
-                            trades.remove(h)
+                            _remove_safe(trades, h)
                             _replenish_order(h.side, h.price, h.level_idx)
     safety = get_safety_status()
     if safety["halted"]:
         global trading_halted
         trading_halted = True
+
+def _remove_safe(lst, item):
+    if item in lst:
+        lst.remove(item)
 
 def _walk_bar(o, h, l, c, pip_step=1):
     segments = []
