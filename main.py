@@ -24,14 +24,7 @@ def load_keyframes():
                 d["res"] = res
             sources.extend(data)
     sources.sort(key=lambda x: (x["date"], x["res"]))
-    seen = set()
-    merged = []
-    for d in sources:
-        k = d["date"]
-        if k not in seen:
-            seen.add(k)
-            merged.append(d)
-    return merged
+    return sources
 
 keyframes = [d for d in load_keyframes() if d.get("res") == 900 and not (d["open"] == d["high"] == d["low"] == d["close"])]
 

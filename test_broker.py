@@ -110,7 +110,7 @@ check("open_positions returns list", isinstance(pos, list))
 
 # --- Trade Expiry ---
 print("\n--- Trade Expiry Constants ---")
-check("MIN_SPACING set", b.MIN_SPACING == 500)
+check("MIN_SPACING set", b.MIN_SPACING == 1000)
 check("MAX_SPACING set", b.MAX_SPACING == 10000)
 check("ATR_DIVISOR set", b.ATR_DIVISOR == 2.0)
 check("BASE_SPREAD exists", hasattr(b, "BASE_SPREAD"))

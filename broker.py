@@ -239,7 +239,14 @@ def place_orders(mid):
 
 def tick_prices(bid, ask, now_t=None):
     global balance, total_trades, daily_trade_count, hit_log, lot_size
-    now_ts = now_t.timestamp() if hasattr(now_t, "timestamp") else time.time()
+    if now_t is None:
+        now_ts = time.time()
+    elif isinstance(now_t, (int, float)):
+        now_ts = now_t
+    elif hasattr(now_t, "timestamp"):
+        now_ts = now_t.timestamp()
+    else:
+        now_ts = time.time()
     mid_price = round((bid + ask) / 2, 2)
     to_fill = []
     for o in orders[:]:
