@@ -149,6 +149,14 @@ details[open] summary{margin-bottom:3px}
       <span class=atr-txt id=comboAdvice>--</span>
       <span class=atr-txt id=comboMeta>ATR --</span>
     </div>
+    <div class=config-strip>
+      <span class=cfg-item><span class=cfg-lbl>ATR</span><span class=cfg-val id=cfgAtr>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>Spacing</span><span class=cfg-val id=cfgSpacing>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>TP</span><span class=cfg-val id=cfgTp>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>Spread</span><span class=cfg-val id=cfgSpread>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>Min/Max</span><span class=cfg-val id=cfgMinMax>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>Dynamic</span><span class=cfg-val id=cfgDynamic>--</span></span>
+    </div>
     <div class=pnl-strip>
       <div class=pnl-item>
         <span class=pnl-item-val id=netPnlVal>$--</span>
@@ -439,7 +447,10 @@ function renderAll(d){
   }
   if(va&&va.level)updateAiBadge(va);
   $("simTime").textContent=d.sim_time||"--:--:--";
-  $("speedDisplay").textContent=(d.speed||1)>=1000000?Math.floor(d.speed/1000000)+"Mx":(d.speed||1)>=1000?Math.floor(d.speed/1000)+"Kx":(d.speed||1)+"x";$("speedHint").textContent=speedHint(d.speed||1);$("speedHint").textContent=speedHint(d.speed||1);
+  var spd=d.speed||1;
+  $("speedDisplay").textContent=spd>=1000000?Math.floor(spd/1000000)+"Mx":spd>=1000?Math.floor(spd/1000)+"Kx":spd+"x";$("speedHint").textContent=speedHint(spd);
+  var spds=[1,10,50,100,1000,10000];
+  var spi=spds.indexOf(spd);if(spi>=0){$("speedSlider").value=spi;$("speedLabel").textContent=spds[spi]+"\u00d7"}
   if(d.elapsed_seconds!=null){
     var s=d.elapsed_seconds,m=Math.floor(s/60)%60,h=Math.floor(s/3600)%24,d2=Math.floor(s/86400)%7,w=Math.floor(s/604800);
     var parts=[];
@@ -458,6 +469,12 @@ function renderAll(d){
   if(d.dynamic_spread!=null){$("liveDynSpread").textContent=d.dynamic_spread?"Yes (ATR×0.1, 20-150 pip)":"No (fixed "+d.base_spread+" pip)"}
   if(d.base_lot!=null){$("liveLot").textContent=d.base_lot}
   $("liveSpreadNow").textContent=d.spread+" pip"
+  if(d.atr!=null){$("cfgAtr").textContent=d.atr.toFixed(0)+"p"}
+  if(d.spacing!=null){$("cfgSpacing").textContent=d.spacing+"p"}
+  if(d.tp!=null){$("cfgTp").textContent=d.tp+"p"}
+  if(d.spread!=null){$("cfgSpread").textContent=d.spread+"p"}
+  if(d.min_spacing!=null&&d.max_spacing!=null){$("cfgMinMax").textContent=d.min_spacing+"/"+d.max_spacing}
+  if(d.dynamic_spread!=null){$("cfgDynamic").textContent=d.dynamic_spread?"Yes":"No"}
   if(d.min_spacing!=null){$("guideMinSp").textContent=d.min_spacing}
   if(d.max_spacing!=null){$("guideMaxSp").textContent=d.max_spacing}
   if(d.atr_divisor!=null){$("guideAtrDiv").textContent=d.atr_divisor}
