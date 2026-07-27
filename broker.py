@@ -9,10 +9,16 @@ COMMISSION = 0.0
 BASE_SPREAD = 0
 DYNAMIC_SPREAD = True
 ATR_WINDOW = 14
-MIN_SPACING = 500
+MIN_SPACING = 1000
 MAX_SPACING = 10000
 ATR_DIVISOR = 2.0
-TP_MULTIPLIER = 1
+TP_MULTIPLIER = 0.5
+MR_ENABLED = True
+MR_LOOKBACK = 20
+MR_THRESHOLD = 0.3
+MR_ENABLED = True
+MR_LOOKBACK = 20
+MR_THRESHOLD = 0.3
 
 DD_HALVE_THRESHOLD = 5.0
 DD_STOP_THRESHOLD = 10.0
@@ -34,6 +40,10 @@ daily_trade_count = 0
 total_trades = 0
 
 price_history = deque(maxlen=ATR_WINDOW)
+mr_price_history = deque(maxlen=MR_LOOKBACK)
+current_sma = 0.0
+mr_price_history = deque(maxlen=MR_LOOKBACK)
+current_sma = 0.0
 current_atr = 5.0
 _atr_raw = 5.0
 current_spacing = MIN_SPACING
@@ -83,6 +93,22 @@ def update_atr(bar_range=None):
         current_spacing = spacing
         current_tp = max(current_spacing + 1, round(current_spacing * TP_MULTIPLIER))
 
+def update_sma(mid_price):
+    global current_sma
+    mr_price_history.append(mid_price)
+    if len(mr_price_history) >= MR_LOOKBACK:
+        current_sma = sum(mr_price_history) / len(mr_price_history)
+    else:
+        current_sma = 0.0
+
+def update_sma(mid_price):
+    global current_sma
+    mr_price_history.append(mid_price)
+    if len(mr_price_history) >= MR_LOOKBACK:
+        current_sma = sum(mr_price_history) / len(mr_price_history)
+    else:
+        current_sma = 0.0
+
 def get_params():
     return {
         "atr": round(current_atr, 1),
@@ -95,6 +121,15 @@ def get_params():
         "base_lot": BASE_LOT,
         "base_spread": BASE_SPREAD,
         "dynamic_spread": bool(DYNAMIC_SPREAD),
+        "mr_enabled": bool(MR_ENABLED),
+        "mr_lookback": MR_LOOKBACK,
+        "mr_threshold": MR_THRESHOLD,
+        "current_sma": round(current_sma, 2),
+        "current_sma_atr": round((current_sma - 0) / (current_atr * PIP), 1) if current_atr > 0 else 0,
+        "mr_enabled": bool(MR_ENABLED),
+        "mr_lookback": MR_LOOKBACK,
+        "mr_threshold": MR_THRESHOLD,
+        "current_sma": round(current_sma, 2),
     }
 
 def get_safety_status():
@@ -205,12 +240,21 @@ def place_orders(mid):
 def tick_prices(bid, ask, now_t=None):
     global balance, total_trades, daily_trade_count, hit_log, lot_size
     now_ts = now_t.timestamp() if hasattr(now_t, "timestamp") else time.time()
+    mid_price = round((bid + ask) / 2, 2)
     to_fill = []
     for o in orders[:]:
-        if o.side == "buy" and abs(ask - o.price) < PIP / 2:
-            to_fill.append(o)
-        elif o.side == "sell" and abs(bid - o.price) < PIP / 2:
-            to_fill.append(o)
+        if o.side == "buy":
+            if abs(ask - o.price) < PIP / 2:
+                if MR_ENABLED and current_sma > 0 and mid_price > current_sma + MR_THRESHOLD * current_atr * PIP:
+                    pass
+                else:
+                    to_fill.append(o)
+        elif o.side == "sell":
+            if abs(bid - o.price) < PIP / 2:
+                if MR_ENABLED and current_sma > 0 and mid_price < current_sma - MR_THRESHOLD * current_atr * PIP:
+                    pass
+                else:
+                    to_fill.append(o)
     for o in to_fill:
         if o not in orders:
             continue

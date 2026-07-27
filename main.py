@@ -1,7 +1,7 @@
 import json, time, random, asyncio, math
 from datetime import datetime, timedelta
 from pathlib import Path
-from broker import account_summary, open_positions, tick_prices, place_orders, update_atr, get_params, current_spacing, PIP, BASE_SPREAD, DYNAMIC_SPREAD, ATR_WINDOW, _walk_bar, MIN_SPACING, MAX_SPACING, ATR_DIVISOR, TP_MULTIPLIER
+from broker import account_summary, open_positions, tick_prices, place_orders, update_atr, get_params, current_spacing, PIP, BASE_SPREAD, DYNAMIC_SPREAD, ATR_WINDOW, _walk_bar, MIN_SPACING, MAX_SPACING, ATR_DIVISOR, TP_MULTIPLIER, MR_ENABLED, MR_LOOKBACK, MR_THRESHOLD, update_sma, current_sma, MR_ENABLED, MR_LOOKBACK, MR_THRESHOLD, update_sma, current_sma
 from collections import deque
 from aiohttp import web
 
@@ -417,6 +417,8 @@ async def tick_loop():
             ask = mid_p + spread / 2
             tick_ms = res / max(len(bar_ticks), 1) / 1000
             dt = day_start + __import__("datetime").timedelta(seconds=day_seconds + int(tick_idx * tick_ms))
+            update_sma(mid_p)
+            update_sma(mid_p)
             tick_prices(bid, ask, dt)
 
             tick_count += 1

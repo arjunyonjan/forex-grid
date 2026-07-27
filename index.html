@@ -156,6 +156,10 @@ details[open] summary{margin-bottom:3px}
       <span class=cfg-item><span class=cfg-lbl>Spread</span><span class=cfg-val id=cfgSpread>--</span></span>
       <span class=cfg-item><span class=cfg-lbl>Min/Max</span><span class=cfg-val id=cfgMinMax>--</span></span>
       <span class=cfg-item><span class=cfg-lbl>Dynamic</span><span class=cfg-val id=cfgDynamic>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>MR</span><span class=cfg-val id=cfgMr>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>SMA</span><span class=cfg-val id=cfgSma>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>MR</span><span class=cfg-val id=cfgMr>--</span></span>
+      <span class=cfg-item><span class=cfg-lbl>SMA</span><span class=cfg-val id=cfgSma>--</span></span>
     </div>
     <div class=pnl-strip>
       <div class=pnl-item>
@@ -303,6 +307,8 @@ details[open] summary{margin-bottom:3px}
     <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Base Lot</span><span style="font-weight:600;font-family:monospace" id="liveLot">--</span></div>
     <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Dynamic Spread</span><span style="font-weight:600;font-family:monospace" id="liveDynSpread">--</span></div>
     <div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--hl)"><span>Actual Spread Now</span><span style="font-weight:600;font-family:monospace;color:var(--orng)" id="liveSpreadNow">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Mean Rev (on/SMA/thresh)</span><span style="font-weight:600;font-family:monospace" id="liveMr">--</span></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Mean Rev (on/SMA/thresh)</span><span style="font-weight:600;font-family:monospace" id="liveMr">--</span></div>
   </div>
 
   <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--bd)">
@@ -314,6 +320,8 @@ details[open] summary{margin-bottom:3px}
         <div style="margin-bottom:8px"><b style="color:var(--cyn)">ATR DIVISOR</b> <span style="color:var(--fg2);font-family:monospace" id="guideAtrDiv">--</span><br><span style="font-size:9px">Sensitivity control. Lower = wider spacing for same ATR. Formula: <code style="background:var(--hl);padding:1px 4px;border-radius:3px">spacing = max(MIN, min(MAX, ATR / DIVISOR))</code></span></div>
         <div style="margin-bottom:8px"><b style="color:var(--orng)">TP MULTIPLIER</b> <span style="color:var(--fg2);font-family:monospace" id="guideTpMult">--</span><br><span style="font-size:9px">Take-profit as a ratio of spacing. 1.0 means TP = spacing. Higher values increase win size per trade at the cost of fewer hits.</span></div>
         <div style="margin-bottom:8px"><b style="color:var(--fg)">BASE LOT</b> <span style="color:var(--fg2);font-family:monospace" id="guideLot">--</span><br><span style="font-size:9px">Position size per grid level. At 0.01, each pip move = $0.10. A 1500-pip win = ~$15 per position.</span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--mag)">MEAN REVERSION</b> <span style="color:var(--fg2);font-family:monospace" id="guideMr">--</span><br><span style="font-size:9px">Only opens trades when price deviates from SMA by threshold × ATR. <code style="background:var(--hl);padding:1px 4px;border-radius:3px">|price - SMA| > MR_THRESHOLD × ATR</code>. Prevents trading into momentum.</span></div>
+        <div style="margin-bottom:8px"><b style="color:var(--mag)">MEAN REVERSION</b> <span style="color:var(--fg2);font-family:monospace" id="guideMr">--</span><br><span style="font-size:9px">Only opens trades when price deviates from SMA by threshold × ATR. <code style="background:var(--hl);padding:1px 4px;border-radius:3px">|price - SMA| > MR_THRESHOLD × ATR</code>. Prevents trading into momentum.</span></div>
         <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--hl);font-size:9px;color:var(--fg2)">All values update in real-time via SSE from the running simulation. Config constants are in <code style="background:var(--hl);padding:1px 4px;border-radius:3px">broker.py</code>.</div>
       </div>
     </details>
@@ -482,6 +490,14 @@ function renderAll(d){
   if(d.atr_divisor!=null){$("guideAtrDiv").textContent=d.atr_divisor}
   if(d.tp_multiplier!=null){$("guideTpMult").textContent=d.tp_multiplier}
   if(d.base_lot!=null){$("guideLot").textContent=d.base_lot}
+  if(d.mr_enabled!=null&&d.mr_lookback!=null&&d.mr_threshold!=null){$("guideMr").textContent=(d.mr_enabled?"ON":"OFF")+" | SMA="+d.mr_lookback+" | thresh="+d.mr_threshold}
+  if(d.mr_enabled!=null&&d.mr_lookback!=null&&d.mr_threshold!=null){$("liveMr").textContent=(d.mr_enabled?"ON":"OFF")+" / "+d.mr_lookback+" / "+d.mr_threshold}
+  if(d.mr_enabled!=null){$("cfgMr").textContent=d.mr_enabled?"ON":"OFF"}
+  if(d.current_sma!=null){$("cfgSma").textContent=d.current_sma.toFixed(2)}
+  if(d.mr_enabled!=null&&d.mr_lookback!=null&&d.mr_threshold!=null){$("guideMr").textContent=(d.mr_enabled?"ON":"OFF")+" | SMA="+d.mr_lookback+" | thresh="+d.mr_threshold}
+  if(d.mr_enabled!=null&&d.mr_lookback!=null&&d.mr_threshold!=null){$("liveMr").textContent=(d.mr_enabled?"ON":"OFF")+" / "+d.mr_lookback+" / "+d.mr_threshold}
+  if(d.mr_enabled!=null){$("cfgMr").textContent=d.mr_enabled?"ON":"OFF"}
+  if(d.current_sma!=null){$("cfgSma").textContent=d.current_sma.toFixed(2)}
   var bid=d.bid||0,ask=d.ask||0,mid=d.mid||0;
   var eq=d.equity||0,b=d.balance||0,dd=d.drawdown||0,pnl=d.pnl_today||0;
   $("priceVal").textContent=""+bid.toFixed(2);
