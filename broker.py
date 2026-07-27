@@ -3,18 +3,27 @@ from collections import deque
 
 PIP = 0.01
 PIP_VALUE = 10.0
-BASE_LOT = 0.001
-LOT = 0.001
+BASE_LOT = 0.01
+LOT = 0.01
 COMMISSION = 0.0
+BASE_SPREAD = 0
+DYNAMIC_SPREAD = True
 ATR_WINDOW = 14
-MIN_SPACING = 1500
-MAX_SPACING = 3000
-ATR_DIVISOR = 3.0
-TP_MULTIPLIER = 2
+MIN_SPACING = 500
+MAX_SPACING = 10000
+ATR_DIVISOR = 2.0
+TP_MULTIPLIER = 1
 
 DD_HALVE_THRESHOLD = 5.0
 DD_STOP_THRESHOLD = 10.0
 MAX_POSITIONS = 500
+
+EXPIRY_DAYS = 15
+HARD_STOP_DAYS = 20
+EXPIRY_SECS = EXPIRY_DAYS * 86400
+HARD_STOP_SECS = HARD_STOP_DAYS * 86400
+CLOSE_FRAC_PER_DAY = 0.25
+TP_GRACE_FRAC = 0.5
 
 balance = 1000000.0
 start_balance = 1000000.0
@@ -57,6 +66,8 @@ class Trade:
         self.entry_time = entry_time or time.time()
         self.pnl = 0
         self.cost = 0
+        self.close_pct = 0.0
+        self.last_close_day = -1
 
 def update_atr(bar_range=None):
     global current_atr, current_spacing, current_tp, _atr_raw
@@ -77,6 +88,11 @@ def get_params():
         "atr": round(current_atr, 1),
         "spacing": current_spacing,
         "tp": current_tp,
+        "min_spacing": MIN_SPACING,
+        "max_spacing": MAX_SPACING,
+        "atr_divisor": ATR_DIVISOR,
+        "tp_multiplier": TP_MULTIPLIER,
+        "base_lot": BASE_LOT,
     }
 
 def get_safety_status():
@@ -154,6 +170,8 @@ def open_positions(bid, ask, now_t=None):
     if hasattr(now_t, "strftime"):
         now_t = now_t.timestamp()
     for t in trades:
+        age = now_t - t.entry_time
+        age_days = age / 86400
         pnl = (bid - t.price) / PIP * PIP_VALUE * lot_size if t.side == "buy" else (t.price - ask) / PIP * PIP_VALUE * lot_size
         t.pnl = round(pnl, 2)
         result.append({
@@ -164,6 +182,9 @@ def open_positions(bid, ask, now_t=None):
             "pnl": round(pnl, 2),
             "dur": _fmt_dur(t.entry_time, now_t),
             "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)),
+            "close_pct": round(t.close_pct * 100),
+            "age_days": round(age_days, 1),
+            "deadline_extended": age_days > EXPIRY_DAYS and age_days < HARD_STOP_DAYS and t.close_pct == 0,
         })
     return result
 
@@ -203,19 +224,46 @@ def tick_prices(bid, ask, now_t=None):
             orders.remove(hedge)
             total_trades += 1
             daily_trade_count += 1
-    EXPIRY_SECS = 15 * 86400
     for t in trades[:]:
-        if now_ts - t.entry_time > EXPIRY_SECS:
+        age = now_ts - t.entry_time
+        age_days = age / 86400
+        # ---- Deadline logic ----
+        if age_days > EXPIRY_DAYS:
             if t.side == "buy":
-                gross = (bid - t.price) / PIP * PIP_VALUE * lot_size
+                tp_progress = (bid - t.price) / (t.tp - t.price) if t.tp != t.price else 0
             else:
-                gross = (t.price - ask) / PIP * PIP_VALUE * lot_size
-            balance += gross
-            hit_log.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "EXP-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "price": round(bid if t.side == "buy" else ask, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
-            closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "EXP-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
-            trades.remove(t)
-            _replenish_order(t.side, t.price, t.level_idx)
-            continue
+                tp_progress = (t.price - ask) / (t.price - t.tp) if t.price != t.tp else 0
+            near_tp = tp_progress >= TP_GRACE_FRAC
+            if near_tp and age_days < HARD_STOP_DAYS:
+                pass
+            else:
+                days_past = int(age_days - EXPIRY_DAYS)
+                target_close = min(days_past * CLOSE_FRAC_PER_DAY, 1.0)
+                to_close = target_close - t.close_pct
+                if to_close > 0:
+                    if t.side == "buy":
+                        partial = (bid - t.price) / PIP * PIP_VALUE * lot_size * to_close
+                    else:
+                        partial = (t.price - ask) / PIP * PIP_VALUE * lot_size * to_close
+                    balance += partial
+                    t.close_pct += to_close
+                    pct_str = f"{round(t.close_pct * 100)}%"
+                    hit_log.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "PARTIAL", "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "price": round(bid if t.side == "buy" else ask, 2), "pnl": round(partial, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts)), "close_pct": pct_str})
+            if t.close_pct >= 1.0 or age_days >= HARD_STOP_DAYS:
+                remaining = 1.0 - t.close_pct
+                if remaining > 0:
+                    if t.side == "buy":
+                        gross = (bid - t.price) / PIP * PIP_VALUE * lot_size * remaining
+                    else:
+                        gross = (t.price - ask) / PIP * PIP_VALUE * lot_size * remaining
+                    balance += gross
+                    close_side = "HARDSTOP" if age_days >= HARD_STOP_DAYS else "EXPCLOSE"
+                    hit_log.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": close_side + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "price": round(bid if t.side == "buy" else ask, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
+                    closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": close_side + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(bid if t.side == "buy" else ask, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
+                trades.remove(t)
+                _replenish_order(t.side, t.price, t.level_idx)
+                continue
+        # ---- Normal TP hit ----
         if t.side == "buy":
             pnl = (bid - t.price) / PIP * PIP_VALUE * lot_size
             t.pnl = round(pnl, 2)

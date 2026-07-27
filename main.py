@@ -1,14 +1,14 @@
 import json, time, random, asyncio, math
 from datetime import datetime, timedelta
 from pathlib import Path
-from broker import account_summary, open_positions, tick_prices, place_orders, update_atr, get_params, current_spacing, PIP, ATR_WINDOW, _walk_bar
+from broker import account_summary, open_positions, tick_prices, place_orders, update_atr, get_params, current_spacing, PIP, BASE_SPREAD, DYNAMIC_SPREAD, ATR_WINDOW, _walk_bar, MIN_SPACING, MAX_SPACING, ATR_DIVISOR, TP_MULTIPLIER
 from collections import deque
 from aiohttp import web
 
 PIP_VALUE = 10.0
 QUEUE_MAXSIZE = 60
 BASE_PRICE = 4110.0
-spread = 0.0
+spread = BASE_SPREAD
 speed_multiplier = 100
 current_preset_label = "Full Timeline"
 last_broadcast = 0.0
@@ -16,7 +16,7 @@ last_broadcast = 0.0
 def load_keyframes():
     sources = []
     basedir = Path(__file__).parent
-    for fname, res in [("gcf_1m.json", 60), ("gcf_15m.json", 900), ("gcf_1h.json", 3600), ("gcf_daily.json", 86400)]:
+    for fname, res in [("gcf_1m.json", 60), ("gcf_5m.json", 300), ("gcf_15m.json", 900), ("gcf_1h.json", 3600), ("gcf_daily.json", 86400)]:
         p = basedir / fname
         if p.exists():
             data = json.loads(p.read_text())
@@ -151,8 +151,8 @@ async def restart_sim(request):
     _b.total_trades = 0
     _b.current_atr = 5.0
     _b._atr_raw = 5.0
-    _b.current_spacing = 150
-    _b.current_tp = 300
+    _b.current_spacing = 1500
+    _b.current_tp = 1500
     _b.lot_size = _b.BASE_LOT
     _b.trading_halted = False
     _loop_active = True
@@ -160,7 +160,7 @@ async def restart_sim(request):
     return web.json_response({"status": "restarted"})
 
 PRESETS = {
-    "ukraine": {"start": "2022-01-01", "end": "2022-04-30", "speed": 100, "label": "Ukraine War"},
+    "ukraine": {"start": "2022-01-01", "end": "2022-06-30", "speed": 100, "label": "Ukraine War"},
     "crash2022": {"start": "2022-06-01", "end": "2022-11-30", "speed": 100, "label": "2022 Crash"},
     "svb": {"start": "2023-02-01", "end": "2023-05-31", "speed": 100, "label": "SVB Crisis"},
     "oct2023": {"start": "2023-09-01", "end": "2023-11-30", "speed": 100, "label": "Oct 2023 War"},
@@ -172,6 +172,7 @@ PRESETS = {
     "all": {"start": "2022-01-01", "end": "2026-07-31", "speed": 1000, "label": "Full Timeline"},
     "july2026": {"start": "2026-07-01", "end": "2026-07-31", "speed": 100, "label": "July 2026"},
     "last7d": {"start": "2026-07-19", "end": "2026-07-24", "speed": 100, "label": "Last 7 Days"},
+    "5m": {"start": "2026-06-24", "end": "2026-07-24", "speed": 50, "label": "1 Month (5m Data)", "res": 300},
 }
 
 _loop_active = False
@@ -199,12 +200,14 @@ async def set_preset(request):
         _b.total_trades = 0
         _b.current_atr = 5.0
         _b._atr_raw = 5.0
-        _b.current_spacing = 150
-        _b.current_tp = 300
-        _b.current_sl = 375
+        _b.current_spacing = 1500
+        _b.current_tp = 1500
+        _b.current_sl = 1875
         _b.trading_halted = False
         all_kf = load_keyframes()
-        keyframes = [k for k in all_kf if p["start"] <= k["date"][:10] <= p["end"] and not (k["open"] == k["high"] == k["low"] == k["close"])]
+        res_filter = p.get("res") if "res" in p else None
+        kf_pool = [k for k in all_kf if k.get("res") == res_filter] if res_filter else all_kf
+        keyframes = [k for k in kf_pool if p["start"] <= k["date"][:10] <= p["end"] and not (k["open"] == k["high"] == k["low"] == k["close"])]
         daily_moves = []
         if keyframes:
             days = {}
@@ -244,6 +247,22 @@ async def sim_keyframes_handler(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=400)
 
+async def results_handler(request):
+    import broker as _b
+    return web.json_response({
+        account: _b.account_summary(),
+        open_trades: [{
+            id: t.id, side: t.side, entry: t.entry, size: t.size,
+            pnl: t.pnl, sl: t.sl, tp: t.tp, age_days: t.age_days,
+            close_pct: getattr(t, close_pct, 0),
+            days_since_open: getattr(t, days_since_open, 0),
+        } for t in _b.trades],
+        hit_log: list(_b.hit_log),
+        closed_trades: list(_b.closed_trades),
+        preset: current_preset_label,
+        params: _b.get_params(),
+    })
+
 async def index(request):
     resp = web.FileResponse(Path(__file__).parent / "index.html")
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
@@ -280,9 +299,9 @@ async def tick_loop():
     _b.total_trades = 0
     _b.current_atr = 5.0
     _b._atr_raw = 5.0
-    _b.current_spacing = 150
-    _b.current_tp = 300
-    _b.current_sl = 300
+    _b.current_spacing = 1500
+    _b.current_tp = 1500
+    _b.current_sl = 1500
     _b.lot_size = _b.BASE_LOT
 
     kf = keyframes
@@ -344,7 +363,7 @@ async def tick_loop():
 
     _broker = __import__('broker')
     _broker.current_spacing = 1500
-    _broker.current_tp = 3000
+    _broker.current_tp = 1500
     if _daily_bars:
         s, e = kf[0]["date"][:10], kf[-1]["date"][:10]
         dr = [d for d in _daily_bars if s <= d["date"][:10] <= e]
@@ -355,6 +374,8 @@ async def tick_loop():
                 atr_r = atr_r + (2/15)*(rp - atr_r) if atr_r > 0 else rp
             _broker.current_atr = round(atr_r / _broker.PIP, 1)
             _broker._atr_raw = _broker.current_atr
+            _broker.current_spacing = max(MIN_SPACING, min(MAX_SPACING, round(_broker.current_atr / ATR_DIVISOR)))
+            _broker.current_tp = max(_broker.current_spacing + 1, round(_broker.current_spacing * TP_MULTIPLIER))
     place_orders(kf[0]["open"])
 
     for day_idx in range(total_kf):
@@ -391,6 +412,7 @@ async def tick_loop():
                     reactive_alert_day = day_idx
                     reactive_alert = {"level": "WARNING", "msg": f"Volatility spike — ATR ratio {ratio:.1f}x, {short_avg:.0f}pip/tick", "pips": round(short_avg * 1440), "event": ""}
 
+            spread = max(20, min(150, _broker.current_atr * 0.1)) if DYNAMIC_SPREAD else BASE_SPREAD
             bid = mid_p - spread / 2
             ask = mid_p + spread / 2
             tick_ms = res / max(len(bar_ticks), 1) / 1000
@@ -427,6 +449,8 @@ async def tick_loop():
         alpha = 2.0 / (ATR_WINDOW + 1)
         _b._atr_raw = _b._atr_raw + alpha * (bar_range_pips - _b._atr_raw) if _b._atr_raw >= 0.01 else bar_range_pips
         _b.current_atr = round(_b._atr_raw, 1)
+        _b.current_spacing = max(MIN_SPACING, min(MAX_SPACING, round(_b.current_atr / ATR_DIVISOR)))
+        _b.current_tp = max(_b.current_spacing + 1, round(_b.current_spacing * TP_MULTIPLIER))
         asyncio.ensure_future(broadcast({"type": "daily_pnl", "date": day["date"][:10], "pnl": daily_pnl, "trades": daily_trades}))
     asyncio.ensure_future(broadcast({"type": "done", "sim_time": dt.strftime("%Y %b %d %H:%M:%S"), "tick": tick_count, "balance": acct.get("balance"), "equity": acct.get("equity"), "total_pnl": acct.get("total_pnl"), "total_trades": acct.get("total_trades"), "wins": acct.get("wins"), "losses": acct.get("losses"), "max_dd": acct.get("drawdown")}))
     _loop_active = False
@@ -440,10 +464,10 @@ def main():
     app = web.Application()
     app.on_startup.append(on_startup)
     app.router.add_get("/stream", stream_handler)
-
     app.router.add_post("/speed", set_speed)
     app.router.add_post("/restart", restart_sim)
     app.router.add_post("/preset", set_preset)
+    app.router.add_get("/results", results_handler)
     app.router.add_get("/", index)
     app.router.add_get("/{path:.*}", static_handler)
     web.run_app(app, host="127.0.0.1", port=3001)
