@@ -1,22 +1,25 @@
 import json, time, random, asyncio, math
 from datetime import datetime, timedelta
 from pathlib import Path
-from broker import account_summary, open_positions, tick_prices, place_orders, update_atr, get_params, current_spacing, PIP, BASE_SPREAD, DYNAMIC_SPREAD, ATR_WINDOW, _walk_bar, MIN_SPACING, MAX_SPACING, ATR_DIVISOR, TP_MULTIPLIER, MR_ENABLED, MR_LOOKBACK, MR_THRESHOLD, update_sma, current_sma, MR_ENABLED, MR_LOOKBACK, MR_THRESHOLD, update_sma, current_sma, monthly_pnl, trend_strength, HEDGE_CLOSE_ENABLED, TREND_FILTER_ENABLED
+from broker import account_summary, open_positions, tick_prices, grid_hits, simulate, simulate_from_keyframes, update_atr, current_spacing, PIP, _walk_bar
 from collections import deque
 from aiohttp import web
 
 PIP_VALUE = 10.0
 QUEUE_MAXSIZE = 60
 BASE_PRICE = 4110.0
-spread = BASE_SPREAD
-speed_multiplier = 100
-current_preset_label = "Full Timeline"
+spread = 0.0
+speed_multiplier = 1000
 last_broadcast = 0.0
+MID_OFFSET = 200
+MIN_SPACING = 100
+MAX_SPACING = 100
+KF_PATH = Path(__file__).parent / "gcf_daily.json"
 
 def load_keyframes():
     sources = []
     basedir = Path(__file__).parent
-    for fname, res in [("gcf_1m.json", 60), ("gcf_5m.json", 300), ("gcf_15m.json", 900), ("gcf_1h.json", 3600), ("gcf_daily.json", 86400)]:
+    for fname, res in [("gcf_1m.json", 60), ("gcf_15m.json", 900), ("gcf_1h.json", 3600), ("gcf_daily.json", 86400)]:
         p = basedir / fname
         if p.exists():
             data = json.loads(p.read_text())
@@ -24,21 +27,18 @@ def load_keyframes():
                 d["res"] = res
             sources.extend(data)
     sources.sort(key=lambda x: (x["date"], x["res"]))
-    return sources
+    seen = set()
+    merged = []
+    for d in sources:
+        k = d["date"]
+        if k not in seen:
+            seen.add(k)
+            merged.append(d)
+    return merged
 
-keyframes = [d for d in load_keyframes() if d.get("res") == 900 and not (d["open"] == d["high"] == d["low"] == d["close"])]
-
-_daily_raw = json.loads((Path(__file__).parent / "gcf_daily.json").read_text()) if (Path(__file__).parent / "gcf_daily.json").exists() else []
-_daily_bars = [d for d in _daily_raw if not (d["open"] == d["high"] == d["low"] == d["close"])]
-if keyframes and _daily_bars:
-    s, e = keyframes[0]["date"][:10], keyframes[-1]["date"][:10]
-    dr = [d for d in _daily_bars if s <= d["date"][:10] <= e]
-    if dr:
-        atr_r = 0.0
-        for d in dr:
-            rp = max(d["high"] - d["low"], 0.1)
-            atr_r = atr_r + (2/15)*(rp - atr_r) if atr_r > 0 else rp
-        update_atr(bar_range=atr_r)
+keyframes = load_keyframes()
+if keyframes:
+    keyframes = [k for k in keyframes if k["date"][:10] >= "2022-01-01" and k["date"][:10] <= "2022-12-31" and not (k["open"] == k["high"] == k["low"] == k["close"])]
 
 daily_moves = []
 if keyframes:
@@ -78,6 +78,14 @@ if all_2022:
 
 clients = set()
 
+def build_grid(mid):
+    step = current_spacing * PIP
+    levels = []
+    p = round(mid / step) * step if step else mid
+    for i in range(-MID_OFFSET, MID_OFFSET + 1):
+        levels.append(round(p + i * step, 2))
+    return levels
+
 async def broadcast(msg):
     dead = []
     for q in list(clients):
@@ -103,7 +111,7 @@ async def stream_handler(request):
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["X-Accel-Buffering"] = "no"
     await resp.prepare(request)
-    init_msg = {"type": "init", "daily_moves": daily_moves, "monthly_moves": monthly_moves, "preset_label": current_preset_label}
+    init_msg = {"type": "init", "daily_moves": daily_moves, "monthly_moves": monthly_moves}
     init_data = "data: " + json.dumps(init_msg) + "\n\n"
     await resp.write(init_data.encode())
     try:
@@ -127,8 +135,7 @@ async def set_speed(request):
         return web.json_response({"error": str(e)}, status=400)
 
 async def restart_sim(request):
-    global _loop_active, current_preset_label
-    current_preset_label = "Default"
+    global _loop_active
     _loop_active = False
     await asyncio.sleep(0.5)
     import broker as _b
@@ -143,17 +150,18 @@ async def restart_sim(request):
     _b.daily_trade_count = 0
     _b.total_trades = 0
     _b.current_atr = 5.0
-    _b._atr_raw = 5.0
-    _b.current_spacing = 1500
-    _b.current_tp = 1500
     _b.lot_size = _b.BASE_LOT
     _b.trading_halted = False
+    _b.total_wins_cumulative = 0
+    _b.total_losses_cumulative = 0
+    _b.cumulative_win_pnl = 0.0
+    _b.cumulative_loss_pnl = 0.0
     _loop_active = True
     asyncio.ensure_future(tick_loop())
     return web.json_response({"status": "restarted"})
 
 PRESETS = {
-    "ukraine": {"start": "2022-01-01", "end": "2022-06-30", "speed": 100, "label": "Ukraine War"},
+    "ukraine": {"start": "2022-01-01", "end": "2022-04-30", "speed": 100, "label": "Ukraine War"},
     "crash2022": {"start": "2022-06-01", "end": "2022-11-30", "speed": 100, "label": "2022 Crash"},
     "svb": {"start": "2023-02-01", "end": "2023-05-31", "speed": 100, "label": "SVB Crisis"},
     "oct2023": {"start": "2023-09-01", "end": "2023-11-30", "speed": 100, "label": "Oct 2023 War"},
@@ -163,15 +171,12 @@ PRESETS = {
     "crash2026": {"start": "2026-01-01", "end": "2026-03-31", "speed": 10, "label": "130K Crash"},
     "full2022": {"start": "2022-01-01", "end": "2022-12-31", "speed": 1000, "label": "Normal 2022"},
     "all": {"start": "2022-01-01", "end": "2026-07-31", "speed": 1000, "label": "Full Timeline"},
-    "july2026": {"start": "2026-07-01", "end": "2026-07-31", "speed": 100, "label": "July 2026"},
-    "last7d": {"start": "2026-07-19", "end": "2026-07-24", "speed": 100, "label": "Last 7 Days"},
-    "5m": {"start": "2026-06-24", "end": "2026-07-24", "speed": 50, "label": "1 Month (5m Data)", "res": 300},
 }
 
 _loop_active = False
 
 async def set_preset(request):
-    global keyframes, daily_moves, monthly_moves, speed_multiplier, _loop_active, current_preset_label
+    global keyframes, daily_moves, monthly_moves, speed_multiplier, _loop_active
     try:
         body = await request.json()
         name = body.get("name", "")
@@ -192,15 +197,14 @@ async def set_preset(request):
         _b.daily_trade_count = 0
         _b.total_trades = 0
         _b.current_atr = 5.0
-        _b._atr_raw = 5.0
-        _b.current_spacing = 1500
-        _b.current_tp = 1500
-        _b.current_sl = 1875
+        _b.lot_size = _b.BASE_LOT
         _b.trading_halted = False
+        _b.total_wins_cumulative = 0
+        _b.total_losses_cumulative = 0
+        _b.cumulative_win_pnl = 0.0
+        _b.cumulative_loss_pnl = 0.0
         all_kf = load_keyframes()
-        res_filter = p.get("res") if "res" in p else None
-        kf_pool = [k for k in all_kf if k.get("res") == res_filter] if res_filter else all_kf
-        keyframes = [k for k in kf_pool if p["start"] <= k["date"][:10] <= p["end"] and not (k["open"] == k["high"] == k["low"] == k["close"])]
+        keyframes = [k for k in all_kf if p["start"] <= k["date"][:10] <= p["end"] and not (k["open"] == k["high"] == k["low"] == k["close"])]
         daily_moves = []
         if keyframes:
             days = {}
@@ -218,20 +222,9 @@ async def set_preset(request):
                 daily_moves.append({"date": day["date"], "o": day["o"], "h": day["h"], "l": day["l"], "c": day["c"], "range": r, "trend": t, "dir": "DOWN" if day["c"] < day["o"] else "UP"})
             daily_moves.sort(key=lambda x: x["range"], reverse=True)
         speed_multiplier = p["speed"]
-        current_preset_label = p["label"]
         _loop_active = True
         asyncio.ensure_future(tick_loop())
         return web.json_response({"status": "switched", "days": len(keyframes), "speed": p["speed"], "label": p["label"]})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=400)
-
-async def toggle_trend_filter(request):
-    import broker as _b
-    try:
-        body = await request.json()
-        _b.TREND_FILTER_ENABLED = body.get("enabled", not _b.TREND_FILTER_ENABLED)
-        _b.TREND_HEDGE_DISABLE = body.get("disable_on_trend", _b.TREND_HEDGE_DISABLE)
-        return web.json_response({"trend_filter": _b.TREND_FILTER_ENABLED, "disable_on_trend": _b.TREND_HEDGE_DISABLE})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=400)
 
@@ -249,22 +242,6 @@ async def sim_keyframes_handler(request):
         return web.json_response(result)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=400)
-
-async def results_handler(request):
-    import broker as _b
-    return web.json_response({
-        account: _b.account_summary(),
-        open_trades: [{
-            id: t.id, side: t.side, entry: t.entry, size: t.size,
-            pnl: t.pnl, sl: t.sl, tp: t.tp, age_days: t.age_days,
-            close_pct: getattr(t, close_pct, 0),
-            days_since_open: getattr(t, days_since_open, 0),
-        } for t in _b.trades],
-        hit_log: list(_b.hit_log),
-        closed_trades: list(_b.closed_trades),
-        preset: current_preset_label,
-        params: _b.get_params(),
-    })
 
 async def index(request):
     resp = web.FileResponse(Path(__file__).parent / "index.html")
@@ -301,11 +278,12 @@ async def tick_loop():
     _b.daily_trade_count = 0
     _b.total_trades = 0
     _b.current_atr = 5.0
-    _b._atr_raw = 5.0
-    _b.current_spacing = 1500
-    _b.current_tp = 1500
-    _b.current_sl = 1500
     _b.lot_size = _b.BASE_LOT
+    _b.trading_halted = False
+    _b.total_wins_cumulative = 0
+    _b.total_losses_cumulative = 0
+    _b.cumulative_win_pnl = 0.0
+    _b.cumulative_loss_pnl = 0.0
 
     kf = keyframes
     total_kf = len(kf)
@@ -364,23 +342,6 @@ async def tick_loop():
             elif range_pips > 1000:
                 vol_alerts[day_idx] = {"level": "NOTICE", "msg": f"{ev_prefix}{range_pips}pip move possible within 7 days", "pips": range_pips, "event": ev}
 
-    _broker = __import__('broker')
-    _broker.current_spacing = 1500
-    _broker.current_tp = 1500
-    if _daily_bars:
-        s, e = kf[0]["date"][:10], kf[-1]["date"][:10]
-        dr = [d for d in _daily_bars if s <= d["date"][:10] <= e]
-        if dr:
-            atr_r = 0.0
-            for d in dr:
-                rp = max(d["high"] - d["low"], 0.1)
-                atr_r = atr_r + (2/15)*(rp - atr_r) if atr_r > 0 else rp
-            _broker.current_atr = round(atr_r / _broker.PIP, 1)
-            _broker._atr_raw = _broker.current_atr
-            _broker.current_spacing = max(MIN_SPACING, min(MAX_SPACING, round(_broker.current_atr / ATR_DIVISOR)))
-            _broker.current_tp = max(_broker.current_spacing + 1, round(_broker.current_spacing * TP_MULTIPLIER))
-    place_orders(kf[0]["open"])
-
     for day_idx in range(total_kf):
         if not _loop_active:
             return
@@ -393,7 +354,7 @@ async def tick_loop():
         day_start_bal = _b.balance
         day_start_trades = _b.total_trades
 
-        pip_step = 10
+        pip_step = 5
         bar_ticks = _walk_bar(o, h, l, c, pip_step)
 
         for tick_idx, mid_p in enumerate(bar_ticks):
@@ -415,14 +376,14 @@ async def tick_loop():
                     reactive_alert_day = day_idx
                     reactive_alert = {"level": "WARNING", "msg": f"Volatility spike — ATR ratio {ratio:.1f}x, {short_avg:.0f}pip/tick", "pips": round(short_avg * 1440), "event": ""}
 
-            spread = max(20, min(150, _broker.current_atr * 0.1)) if DYNAMIC_SPREAD else BASE_SPREAD
             bid = mid_p - spread / 2
             ask = mid_p + spread / 2
+            update_atr(mid_p)
             tick_ms = res / max(len(bar_ticks), 1) / 1000
             dt = day_start + __import__("datetime").timedelta(seconds=day_seconds + int(tick_idx * tick_ms))
-            update_sma(mid_p)
-            update_sma(mid_p)
-            tick_prices(bid, ask, dt)
+            grid = build_grid(mid_p)
+            tick_prices(bid, ask, grid, dt)
+            grid_hits(grid, mid_p)
 
             tick_count += 1
             acct = account_summary()
@@ -432,16 +393,13 @@ async def tick_loop():
             elapsed_seconds = int((dt - day_start).total_seconds()) + day_idx * int(res / 60) * 60
             msg = {
                 "bid": round(bid, 2), "ask": round(ask, 2), "mid": round(mid_p, 2),
-                "spread": round(spread, 2), "grid": list(set(o.price for o in __import__("broker").orders)),
+                "spread": round(spread, 2), "grid": grid,
                 "positions": pos,
                 "hit_log": list(__import__("broker").hit_log[-20:]),
                 "speed": speed_multiplier, "tick": tick_count,
                 "sim_time": dt.strftime("%Y %b %d %H:%M:%S"),
                 "vol_alert": vol_alert,
                 "elapsed_seconds": elapsed_seconds,
-                "preset_label": current_preset_label,
-                "monthly_pnl": monthly_pnl(),
-                **get_params(),
                 **acct,
             }
             now_m = time.time()
@@ -451,15 +409,11 @@ async def tick_loop():
             await asyncio.sleep(1 / speed_multiplier)
         daily_pnl = round(_b.balance - day_start_bal, 2)
         daily_trades = _b.total_trades - day_start_trades
-        bar_range_pips = max(h - l, 0.1) / PIP
-        alpha = 2.0 / (ATR_WINDOW + 1)
-        _b._atr_raw = _b._atr_raw + alpha * (bar_range_pips - _b._atr_raw) if _b._atr_raw >= 0.01 else bar_range_pips
-        _b.current_atr = round(_b._atr_raw, 1)
-        _b.current_spacing = max(MIN_SPACING, min(MAX_SPACING, round(_b.current_atr / ATR_DIVISOR)))
-        _b.current_tp = max(_b.current_spacing + 1, round(_b.current_spacing * TP_MULTIPLIER))
         asyncio.ensure_future(broadcast({"type": "daily_pnl", "date": day["date"][:10], "pnl": daily_pnl, "trades": daily_trades}))
     asyncio.ensure_future(broadcast({"type": "done", "sim_time": dt.strftime("%Y %b %d %H:%M:%S"), "tick": tick_count, "balance": acct.get("balance"), "equity": acct.get("equity"), "total_pnl": acct.get("total_pnl"), "total_trades": acct.get("total_trades"), "wins": acct.get("wins"), "losses": acct.get("losses"), "max_dd": acct.get("drawdown")}))
-    _loop_active = False
+    await asyncio.sleep(15)
+    if _loop_active:
+        asyncio.ensure_future(tick_loop())
 
 async def on_startup(app):
     global _loop_active
@@ -470,11 +424,11 @@ def main():
     app = web.Application()
     app.on_startup.append(on_startup)
     app.router.add_get("/stream", stream_handler)
+    app.router.add_get("/simulate", simulate_handler)
+    app.router.add_post("/sim-keyframes", sim_keyframes_handler)
     app.router.add_post("/speed", set_speed)
     app.router.add_post("/restart", restart_sim)
     app.router.add_post("/preset", set_preset)
-    app.router.add_get("/results", results_handler)
-    app.router.add_post("/toggle_trend_filter", toggle_trend_filter)
     app.router.add_get("/", index)
     app.router.add_get("/{path:.*}", static_handler)
     web.run_app(app, host="127.0.0.1", port=3001)

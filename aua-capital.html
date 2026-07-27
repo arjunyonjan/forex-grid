@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AUA Capital — Grid Config</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a12;--bg2:#111122;--bd:#1e1e3a;--fg:#e0e0f0;--fg2:#707090;--hl:#181830;--grn:#22c55e;--red:#ef4444;--yel:#eab308;--cyn:#06b6d4;--orng:#f97316}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 "Inter",system-ui,-apple-system,sans-serif;min-height:100dvh}
+.c{max-width:1100px;margin:0 auto;padding:20px}
+.brand{font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--cyn);font-weight:600;margin-bottom:4px}
+h1{font-size:28px;font-weight:800;letter-spacing:-.5px;margin-bottom:4px;background:linear-gradient(135deg,var(--cyn),var(--grn));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sub{font-size:13px;color:var(--fg2);margin-bottom:24px}
+.xxl-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.xxl-card{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.xxl-card-title{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--fg2);margin-bottom:12px;font-weight:600}
+.xxl-row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--hl)}
+.xxl-row:last-child{border-bottom:none}
+.xxl-label{font-size:14px;font-weight:600;color:var(--fg2);text-transform:uppercase;letter-spacing:.5px}
+.xxl-label .hint{font-size:10px;font-weight:400;color:var(--fg2);opacity:.5;margin-left:6px}
+.xxl-val{font-size:28px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.xxl-val.grn{color:var(--grn)}
+.xxl-val.cyn{color:var(--cyn)}
+.xxl-val.yel{color:var(--yel)}
+.xxl-val.orng{color:var(--orng)}
+.xxl-val.red{color:var(--red)}
+.muted{font-size:12px;color:var(--fg2);margin-top:20px;text-align:center}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.status-dot.online{background:var(--grn);box-shadow:0 0 6px var(--grn)}
+.status-dot.offline{background:var(--red);box-shadow:0 0 6px var(--red)}
+.tag{font-size:9px;padding:1px 6px;border-radius:4px;background:var(--hl);color:var(--fg2);margin-left:8px}
+@media(max-width:700px){.xxl-grid{grid-template-columns:1fr}.xxl-val{font-size:22px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="c">
+  <div class="brand">AUA Capital</div>
+  <h1>Grid Parameter Studio</h1>
+  <div class="sub">Live configuration from running simulation · <span id="presetDisplay">—</span> · <span id="timeDisplay">—</span></div>
+  <div class="xxl-grid">
+    <div class="xxl-card">
+      <div class="xxl-card-title">╺ Grid Floor &amp; Ceiling</div>
+      <div class="xxl-row"><span class="xxl-label">MIN SPACING <span class="hint">FLOOR</span></span><span class="xxl-val grn" id="minSpacing">1500</span></div>
+      <div class="xxl-row"><span class="xxl-label">MAX SPACING <span class="hint">CEIL</span></span><span class="xxl-val yel" id="maxSpacing">5000</span></div>
+      <div class="xxl-row"><span class="xxl-label">ATR DIVISOR <span class="hint">SENSITIVITY</span></span><span class="xxl-val cyn" id="atrDivisor">2.0</span></div>
+      <div class="xxl-row"><span class="xxl-label">TP MULTIPLIER <span class="hint">RATIO</span></span><span class="xxl-val orng" id="tpMultiplier">1.0</span></div>
+      <div class="xxl-row"><span class="xxl-label">BASE LOT <span class="hint">SIZE</span></span><span class="xxl-val" id="baseLot">0.01</span></div>
+    </div>
+    <div class="xxl-card">
+      <div class="xxl-card-title">╺ Live Statistics</div>
+      <div class="xxl-row"><span class="xxl-label">ATR <span class="hint">VOLATILITY</span></span><span class="xxl-val cyn" id="liveAtr">—</span></div>
+      <div class="xxl-row"><span class="xxl-label">SPACING <span class="hint">GRID GAP</span></span><span class="xxl-val grn" id="liveSpacing">—</span></div>
+      <div class="xxl-row"><span class="xxl-label">TAKE PROFIT <span class="hint">TARGET</span></span><span class="xxl-val yel" id="liveTp">—</span></div>
+      <div class="xxl-row"><span class="xxl-label">BALANCE <span class="hint">EQUITY</span></span><span class="xxl-val" id="liveBalance">—</span></div>
+      <div class="xxl-row"><span class="xxl-label">OPEN TRADES <span class="hint">POSITIONS</span></span><span class="xxl-val orng" id="liveTrades">—</span></div>
+    </div>
+  </div>
+  <div style="margin-top:20px">
+    <div class="xxl-card">
+      <div class="xxl-card-title">╺ Formula Reference</div>
+      <div style="font-size:13px;color:var(--fg2);line-height:1.8;font-family:ui-monospace,monospace">
+        <div><span style="color:var(--cyn)">spacing</span> = max(<span style="color:var(--grn)">MIN_SPACING</span>, min(<span style="color:var(--yel)">MAX_SPACING</span>, round(<span style="color:var(--cyn)">ATR</span> / <span style="color:var(--cyn)">ATR_DIVISOR</span>)))</div>
+        <div><span style="color:var(--yel)">TP</span> = max(spacing + 1, round(spacing × <span style="color:var(--orng)">TP_MULTIPLIER</span>))</div>
+      </div>
+    </div>
+  </div>
+  <div class="muted"><span class="status-dot online" id="statusDot"></span> <span id="statusText">Connecting...</span></div>
+</div>
+<script>
+var $=function(id){return document.getElementById(id)};
+var es=new EventSource("/stream");
+es.onmessage=function(e){
+  try{
+    var d=JSON.parse(e.data);
+    if(d.type==="init"){
+      $("presetDisplay").textContent=d.preset_label||"Full Timeline";
+    }
+    if(d.sim_time)$("timeDisplay").textContent=d.sim_time;
+    if(d.atr!=null)$("liveAtr").textContent=Number(d.atr).toFixed(1);
+    if(d.spacing!=null)$("liveSpacing").textContent=d.spacing;
+    if(d.tp!=null)$("liveTp").textContent=d.tp;
+    if(d.balance!=null){
+      var b=d.balance;
+      $("liveBalance").textContent=(b>=1e6?(b/1e6).toFixed(2)+"M":(b>=1e3?(b/1e3).toFixed(1)+"K":b.toFixed(0)))+" $";
+    }
+    if(d.open_trades!=null)$("liveTrades").textContent=d.open_trades;
+    $("statusText").textContent="Connected · "+(d.preset_label||"sim")+" · tick "+d.tick;
+    $("statusDot").className="status-dot online";
+  }catch(e){}
+};
+es.onerror=function(){
+  $("statusText").textContent="Disconnected — reconnecting...";
+  $("statusDot").className="status-dot offline";
+};
+</script>
+</body>
+</html>

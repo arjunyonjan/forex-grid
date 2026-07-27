@@ -20,6 +20,11 @@ MR_ENABLED = True
 MR_LOOKBACK = 20
 MR_THRESHOLD = 0.3
 
+TREND_FILTER_ENABLED = True
+HEDGE_CLOSE_ENABLED = True
+TREND_STRENGTH_THRESHOLD = 0.2
+TREND_HEDGE_DISABLE = False
+
 DD_HALVE_THRESHOLD = 5.0
 DD_STOP_THRESHOLD = 10.0
 MAX_POSITIONS = 500
@@ -109,6 +114,27 @@ def update_sma(mid_price):
     else:
         current_sma = 0.0
 
+trend_strength = 0.0
+
+_prev_hedge_state = True
+
+def update_trend_filter(mid_price):
+    global trend_strength, HEDGE_CLOSE_ENABLED, _prev_hedge_state
+    if current_sma <= 0 or current_atr <= 0:
+        trend_strength = 0.0
+        HEDGE_CLOSE_ENABLED = True
+        _prev_hedge_state = True
+        return
+    deviation = abs(mid_price - current_sma)
+    atr_pips = current_atr * PIP
+    trend_strength = round(deviation / atr_pips, 2) if atr_pips > 0 else 0.0
+    if TREND_FILTER_ENABLED:
+        strong = trend_strength > TREND_STRENGTH_THRESHOLD
+        if TREND_HEDGE_DISABLE:
+            HEDGE_CLOSE_ENABLED = not strong
+        else:
+            HEDGE_CLOSE_ENABLED = strong
+
 def get_params():
     return {
         "atr": round(current_atr, 1),
@@ -126,11 +152,21 @@ def get_params():
         "mr_threshold": MR_THRESHOLD,
         "current_sma": round(current_sma, 2),
         "current_sma_atr": round((current_sma - 0) / (current_atr * PIP), 1) if current_atr > 0 else 0,
-        "mr_enabled": bool(MR_ENABLED),
-        "mr_lookback": MR_LOOKBACK,
-        "mr_threshold": MR_THRESHOLD,
-        "current_sma": round(current_sma, 2),
+        "trend_filter": bool(TREND_FILTER_ENABLED),
+        "trend_strength": trend_strength,
+        "hedge_close_enabled": bool(HEDGE_CLOSE_ENABLED),
     }
+
+
+
+def monthly_pnl():
+    from collections import defaultdict
+    months = defaultdict(float)
+    for t in closed_trades:
+        et = t.get("entry_time", "")
+        if len(et) >= 7:
+            months[et[:7]] += t.get("pnl", 0)
+    return {k: round(v, 2) for k, v in sorted(months.items())}
 
 def get_safety_status():
     upnl = sum(t.pnl for t in trades)
@@ -238,7 +274,7 @@ def place_orders(mid):
         orders.append(Order("sell", level, sell_tp, i))
 
 def tick_prices(bid, ask, now_t=None):
-    global balance, total_trades, daily_trade_count, hit_log, lot_size
+    global balance, total_trades, daily_trade_count, hit_log, lot_size, _prev_hedge_state
     if now_t is None:
         now_ts = time.time()
     elif isinstance(now_t, (int, float)):
@@ -248,6 +284,18 @@ def tick_prices(bid, ask, now_t=None):
     else:
         now_ts = time.time()
     mid_price = round((bid + ask) / 2, 2)
+    update_trend_filter(mid_price)
+    if TREND_FILTER_ENABLED and HEDGE_CLOSE_ENABLED and not _prev_hedge_state:
+        for t in trades[:]:
+            for h in trades[:]:
+                if h is not t and h.level_idx == t.level_idx and h.side != t.side:
+                    pnl = (h.price - bid) / PIP * PIP_VALUE * lot_size if h.side == 'sell' else (ask - h.price) / PIP * PIP_VALUE * lot_size
+                    balance += pnl
+                    hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'CLEANUP-' + h.side.upper(), 'entry': round(h.price, 2), 'exit': round(bid if h.side == 'sell' else ask, 2), 'price': round(bid if h.side == 'sell' else ask, 2), 'pnl': round(pnl, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                    trades.remove(h)
+                    _replenish_order(h.side, h.price, h.level_idx)
+                    break
+    _prev_hedge_state = HEDGE_CLOSE_ENABLED
     to_fill = []
     for o in orders[:]:
         if o.side == "buy":
@@ -327,6 +375,15 @@ def tick_prices(bid, ask, now_t=None):
                 closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "TP-BUY", "entry": round(t.price, 2), "exit": round(t.tp, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
                 trades.remove(t)
                 _replenish_order(t.side, t.price, t.level_idx)
+                if HEDGE_CLOSE_ENABLED:
+                    for h in trades[:]:
+                        if h.side == 'sell' and h.level_idx == t.level_idx:
+                            loss = (h.price - bid) / PIP * PIP_VALUE * lot_size
+                            balance += loss
+                            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(bid, 2), 'price': round(bid, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(bid, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            trades.remove(h)
+                            _replenish_order(h.side, h.price, h.level_idx)
         else:
             pnl = (t.price - ask) / PIP * PIP_VALUE * lot_size
             t.pnl = round(pnl, 2)
@@ -337,6 +394,15 @@ def tick_prices(bid, ask, now_t=None):
                 closed_trades.append({"t": time.strftime("%H:%M:%S", time.localtime(now_ts)), "side": "TP-SELL", "entry": round(t.price, 2), "exit": round(t.tp, 2), "pnl": round(gross, 2), "entry_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time)), "exit_time": time.strftime("%Y-%m-%d %H:%M", time.localtime(now_ts))})
                 trades.remove(t)
                 _replenish_order(t.side, t.price, t.level_idx)
+                if HEDGE_CLOSE_ENABLED:
+                    for h in trades[:]:
+                        if h.side == 'buy' and h.level_idx == t.level_idx:
+                            loss = (ask - h.price) / PIP * PIP_VALUE * lot_size
+                            balance += loss
+                            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(ask, 2), 'price': round(ask, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(ask, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            trades.remove(h)
+                            _replenish_order(h.side, h.price, h.level_idx)
     safety = get_safety_status()
     if safety["halted"]:
         global trading_halted
