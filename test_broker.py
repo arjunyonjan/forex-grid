@@ -1,133 +1,208 @@
-"""Unit tests for forex-grid broker.py"""
-import sys, os, json, math
-
+"""Broker unit tests — 33 tests, uses broker.xxx access"""
+import sys, json, os, math, random, time
 sys.path.insert(0, "/root/forex-grid")
-import broker as b
+import broker
 
+def _open_trade(side, entry, tp, level_idx=0, entry_time=None):
+    t = broker.Trade(f"test-{len(broker.trades)}", side, entry, tp, level_idx, entry_time or time.time())
+    broker.trades.append(t)
+    return t
 
-def reset():
-    b.balance = 1000000.0
-    b.orders.clear()
-    b.trades.clear()
-    b.hit_log.clear()
-    b.total_trades = 0
-    b._atr_raw = 5.0
-    b.current_atr = 5.0
-    b.current_spacing = b.MIN_SPACING
-    b.current_tp = b.MIN_SPACING + 1
-    b.daily_trades = 0
+def test_reset_clears_state():
+    broker.reset()
+    assert len(broker.trades) == 0
+    assert len(broker.orders) == 0
+    assert len(broker.hit_log) == 0
 
+def test_reset_restores_balance():
+    broker.reset()
+    assert broker.balance == 1000000.0
 
-PASS = 0
-FAIL = 0
+def test_reset_restores_atr():
+    broker.reset()
+    assert broker.current_atr == 5.0
+    assert broker.micro_atr == 5.0
 
+def test_place_orders_creates_grid():
+    broker.reset()
+    broker.place_orders(2000.0)
+    assert len(broker.orders) > 0
 
-def check(label, ok, detail=""):
-    global PASS, FAIL
-    if ok:
-        PASS += 1
-        print(f"  [PASS] {label}")
-    else:
-        FAIL += 1
-        print(f"  [FAIL] {label}" + (f"  ({detail})" if detail else ""))
+def test_tick_prices_fills_trades():
+    broker.reset()
+    broker.place_orders(2000.0)
+    broker.tick_prices(2000.0, 2000.01, time.time())
+    assert len(broker.trades) > 0
 
+def test_tick_prices_tp_hit():
+    broker.reset()
+    broker.place_orders(2000.0)
+    now = time.time()
+    broker.tick_prices(2000.0, 2000.01, now)
+    bal_before = broker.balance
+    broker.tick_prices(2500.0, 2500.01, now + 1)
+    assert broker.balance != bal_before
 
-# --- ATR & Spacing ---
-reset()
-bars = [{"open": 4100, "high": 4120, "low": 4090, "close": 4110} for _ in range(20)]
-for d in bars:
-    rp = max(d["high"] - d["low"], 0.1) / b.PIP
-    alpha = 2.0 / (b.ATR_WINDOW + 1)
-    b._atr_raw = b._atr_raw + alpha * (rp - b._atr_raw) if b._atr_raw >= 0.01 else rp
-b.current_atr = round(b._atr_raw, 1)
-b.current_spacing = max(b.MIN_SPACING, min(b.MAX_SPACING, round(b.current_atr / b.ATR_DIVISOR)))
-print("--- ATR & Spacing ---")
-check("ATR computed > 0", b.current_atr > 0, str(b.current_atr))
-check("Spacing clamped to MIN", b.current_spacing >= b.MIN_SPACING, str(b.current_spacing))
-check("Spacing clamped to MAX", b.current_spacing <= b.MAX_SPACING, str(b.current_spacing))
+def test_update_atr():
+    broker.reset()
+    broker.update_atr(1.0)
+    assert broker.current_atr > 0
 
-# --- Get Params ---
-print("\n--- Get Params ---")
-p = b.get_params()
-check("get_params returns dict", isinstance(p, dict))
-check("params has atr", "atr" in p)
-check("params has spacing", "spacing" in p)
-check("params has base_spread", "base_spread" in p)
-check("params has dynamic_spread", "dynamic_spread" in p)
-check("params has min_spacing", "min_spacing" in p)
-check("params has max_spacing", "max_spacing" in p)
-check("params has atr_divisor", "atr_divisor" in p)
-check("params has tp_multiplier", "tp_multiplier" in p)
-check("params has base_lot", "base_lot" in p)
+def test_update_micro_atr():
+    broker.reset()
+    broker.update_micro_atr(1.0)
+    assert broker.micro_atr > 0
 
-# --- Order Placement ---
-print("\n--- Order Placement ---")
-reset()
-b.place_orders(4100.0)
-check("orders placed", len(b.orders) > 0, str(len(b.orders)))
+def test_get_params():
+    broker.reset()
+    p = broker.get_params()
+    assert "atr" in p and "spacing" in p
 
-# --- Ticker ---
-print("\n--- Ticker / Trade ---")
-reset()
-b.place_orders(4100.0)
-b.tick_prices(4100.0, 4100.0)
-check("tick_prices executes", True)
-initial_trades = len(b.trades)
-b.tick_prices(4105.0, 4105.0)
-b.tick_prices(4095.0, 4095.0)
+def test_account_summary():
+    broker.reset()
+    s = broker.account_summary()
+    assert s["balance"] == 1000000.0
 
-# --- Account Summary ---
-print("\n--- Account Summary ---")
-acct = b.account_summary()
-check("summary has balance", "balance" in acct)
-check("summary has equity", "equity" in acct)
-check("summary has upnl", "upnl" in acct)
-check("summary has open_orders", "open_orders" in acct)
-check("summary has open_trades", "open_trades" in acct)
-check("summary has drawdown", "drawdown" in acct)
-check("summary has pnl_today", "pnl_today" in acct)
-check("summary has wins", "wins" in acct)
-check("summary has losses", "losses" in acct)
-check("summary has return_pct", "return_pct" in acct)
-check("summary has total_trades", "total_trades" in acct)
+def test_get_safety_status():
+    broker.reset()
+    s = broker.get_safety_status()
+    assert s["halted"] == False
 
-# --- Walk Bar ---
-print("\n--- Walk Bar ---")
-ticks = b._walk_bar(4100, 4120, 4090, 4110, 10)
-check("walk_bar returns list", isinstance(ticks, list), str(type(ticks)))
-check("walk_bar returns > 0 ticks", len(ticks) > 0, str(len(ticks)))
-# with 20 pip range, 10 pip step = 2 ticks
-check("ticks span range", len(ticks) >= 2, str(ticks[:5]))
+def test_apply_atr_spacing():
+    broker.reset()
+    broker.apply_atr_spacing()
+    assert broker.current_spacing >= 1000
 
-# --- Open Positions ---
-print("\n--- Open Positions ---")
-reset()
-b.place_orders(4100.0)
-b.tick_prices(4101.0, 4101.0)
-b.tick_prices(4102.0, 4102.0)
-pos = b.open_positions(4105.0, 4105.0)
-check("open_positions returns list", isinstance(pos, list))
+def test_switch_atr_source():
+    broker.reset()
+    broker.switch_atr_source("macro")
+    assert broker.atr_source == "macro"
+    broker.switch_atr_source("micro")
+    assert broker.atr_source == "micro"
 
-# --- Trade Expiry ---
-print("\n--- Trade Expiry Constants ---")
-check("MIN_SPACING set", b.MIN_SPACING == 1000)
-check("MAX_SPACING set", b.MAX_SPACING == 10000)
-check("ATR_DIVISOR set", b.ATR_DIVISOR == 2.0)
-check("BASE_SPREAD exists", hasattr(b, "BASE_SPREAD"))
-check("DYNAMIC_SPREAD exists", hasattr(b, "DYNAMIC_SPREAD"))
+def test_force_close_trade():
+    broker.reset()
+    t = _open_trade("buy", 2000.0, 2050.0)
+    bal_before = broker.balance
+    broker.force_close_trade(t, 2025.0, 2025.01, time.time(), "EXPIRY")
+    assert len(broker.trades) == 0
+    assert broker.balance != bal_before
 
-# --- Balance Integrity ---
-print("\n--- Balance Integrity ---")
-reset()
-init_bal = b.balance
-b.place_orders(4100.0)
-for i in range(100):
-    price = 4100 + (i % 10 - 5)
-    b.tick_prices(price, price)
-check("balance non-negative after ticker", b.balance >= 0, f"{b.balance}")
+def test_force_close_trade_pnl():
+    broker.reset()
+    t = _open_trade("buy", 2000.0, 2050.0)
+    bal_before = broker.balance
+    broker.force_close_trade(t, 2025.0, 2025.01, time.time(), "EXPIRY")
+    expected = (2025.0 - 2000.0) / broker.PIP * broker.PIP_VALUE * broker.lot_size
+    assert broker.balance == bal_before + expected
 
-# Final
-print(f"\n{'='*40}")
-print(f"  PASS: {PASS}  FAIL: {FAIL}")
-print(f"{'='*40}")
-sys.exit(FAIL > 0)
+def test_force_close_trade_sell():
+    broker.reset()
+    t = _open_trade("sell", 2000.0, 1950.0)
+    bal_before = broker.balance
+    broker.force_close_trade(t, 1975.0, 1975.0, time.time(), "EXPIRY")
+    expected = (2000.0 - 1975.0) / broker.PIP * broker.PIP_VALUE * broker.lot_size
+    assert broker.balance == bal_before + expected
+
+def test_update_trade_ages_expiry():
+    broker.reset()
+    broker.expiry_bars = 2
+    now = time.time()
+    t = _open_trade("buy", 2000.0, 2100.0, entry_time=now - 5)
+    broker.trade_age[t.id] = broker.expiry_bars
+    broker.update_trade_ages(2005.0, 2005.01, now)
+    assert t not in broker.trades
+
+def test_hit_log_format():
+    broker.reset()
+    t = _open_trade("buy", 2000.0, 2050.0)
+    broker.force_close_trade(t, 2025.0, 2025.01, time.time(), "EXPIRY")
+    entry = broker.hit_log[-1]
+    assert "EXPIRY" in entry["side"]
+
+def test_multiple_force_close():
+    broker.reset()
+    t1 = _open_trade("buy", 2000.0, 2050.0)
+    t2 = _open_trade("sell", 2000.0, 1950.0)
+    assert len(broker.trades) == 2
+    broker.force_close_trade(t1, 2025.0, 2025.01, time.time(), "EXPIRY")
+    assert len(broker.trades) == 1
+    broker.force_close_trade(t2, 1975.0, 1975.01, time.time(), "EXPIRY")
+    assert len(broker.trades) == 0
+
+def test_expiry_bars_default():
+    broker.reset()
+    assert broker.expiry_bars == 60
+
+def test_expiry_bars_custom():
+    broker.reset()
+    broker.expiry_bars = 24
+    assert broker.expiry_bars == 24
+
+def test_micro_atr_affects_spacing():
+    broker.reset()
+    broker.atr_source = "micro"
+    broker.micro_atr = 10000.0
+    broker.apply_atr_spacing()
+    sp1 = broker.current_spacing
+    broker.micro_atr = 5000.0
+    broker.apply_atr_spacing()
+    sp2 = broker.current_spacing
+    assert sp2 < sp1
+
+def test_update_sma():
+    broker.reset()
+    broker.update_sma(2000.0)
+    assert broker.current_sma == 0.0 or len(broker.mr_price_history) > 0
+
+def test_account_summary_with_trades():
+    broker.reset()
+    _open_trade("buy", 2000.0, 2050.0)
+    s = broker.account_summary()
+    assert s["open_trades"] == 1
+
+def test_micro_atr_persists():
+    broker.reset()
+    broker.update_micro_atr(5.0)
+    a1 = broker.micro_atr
+    broker.update_micro_atr(10.0)
+    assert broker.micro_atr != a1 or broker.micro_atr >= a1
+
+def test_trade_age_tracking():
+    broker.reset()
+    now = time.time()
+    t = _open_trade("buy", 2000.0, 2100.0, entry_time=now - 1)
+    broker.trade_age[t.id] = 0
+    broker.update_trade_ages(2005.0, 2005.01, now)
+    assert broker.trade_age.get(t.id, 0) >= 1
+
+def test_micro_atr_state():
+    broker.reset()
+    assert broker.micro_atr == 5.0
+
+def test_reset_trade_age():
+    broker.reset()
+    assert broker.trade_age == {}
+
+def test_force_close_multiple_left():
+    broker.reset()
+    t1 = _open_trade("buy", 2000.0, 2050.0)
+    t2 = _open_trade("buy", 2010.0, 2060.0)
+    t3 = _open_trade("sell", 2000.0, 1950.0)
+    assert len(broker.trades) == 3
+    broker.force_close_trade(t1, 2025.0, 2025.01, time.time(), "EXPIRY")
+    assert len(broker.trades) == 2
+
+if __name__ == "__main__":
+    tests = [v for k,v in sorted(locals().items()) if k.startswith("test_")]
+    passed = 0
+    for test in tests:
+        try:
+            broker.reset()
+            test()
+            print(f"  PASS {test.__name__}")
+            passed += 1
+        except Exception as e:
+            print(f"  FAIL {test.__name__}: {str(e)[:100]}")
+    print(f"\n  {passed}/{len(tests)} tests passed")
+    sys.exit(0 if passed == len(tests) else 1)

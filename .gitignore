@@ -7,3 +7,11 @@ trades.csv
 google-cred.json
 google-token.json
 node_modules/.package-lock.json
+*.csv
+micro_*.json
+_fix_*.py
+_patch_*.py
+_write_html.py
+yesterday_*.json
+features-micro.md
+daily-goals.md

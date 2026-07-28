@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forex Grid Report</title>
+<style>
+:root{--bg:#0a0a0f;--bg2:#111120;--bd:#1e1e3a;--fg:#c0c0d0;--fg2:#606080;--hl:#181830;--grn:#22c55e;--red:#ef4444;--yel:#eab308;--cyn:#06b6d4}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 ui-monospace,sans-serif;margin:0;padding:16px}
+.c{max-width:700px;margin:0 auto}
+h1{font-size:16px;margin:0 0 4px}
+h2{font-size:12px;color:var(--fg2);margin:0 0 12px;font-weight:400}
+.card{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px}
+.stat{text-align:center;padding:8px;border-radius:6px;background:var(--hl)}
+.stat-val{font-size:20px;font-weight:700}
+.stat-lbl{font-size:9px;color:var(--fg2);text-transform:uppercase;margin-top:2px}
+.grn{color:var(--grn)}.red{color:var(--red)}.yel{color:var(--yel)}.cyn{color:var(--cyn)}
+.detail{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid var(--hl)}
+.detail:last-child{border:0}
+.detail-lbl{color:var(--fg2)}
+.detail-val{font-weight:600}
+.tab-bar{display:flex;gap:2px;margin-bottom:8px}
+.tab-btn{padding:5px 12px;border-radius:5px;border:1px solid var(--bd);background:var(--bg);color:var(--fg2);cursor:pointer;font:inherit;font-size:11px}
+.tab-btn.active{background:var(--bg2);color:var(--fg);font-weight:600}
+.tab-btn:hover{color:var(--fg)}
+.loading{text-align:center;padding:40px;color:var(--fg2);font-size:13px}
+.viz-btn{position:fixed;bottom:16px;right:16px;background:var(--cyn);color:#000;border:0;border-radius:50%;width:48px;height:48px;cursor:pointer;font-size:20px;box-shadow:0 2px 8px rgba(0,0,0,.4);z-index:100;display:flex;align-items:center;justify-content:center}
+.viz-btn:hover{transform:scale(1.1)}
+.presets{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px}
+.preset-btn{padding:3px 10px;border-radius:4px;border:1px solid var(--bd);background:var(--hl);color:var(--fg2);cursor:pointer;font-size:10px;font-family:inherit}
+.preset-btn:hover{border-color:var(--cyn);color:var(--fg)}
+.preset-btn.active{background:var(--cyn);color:#fff;border-color:var(--cyn)}
+@media(max-width:500px){.grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="c">
+  <h1>Gold Grid Report</h1>
+  <h2 id="subtitle">Select a preset</h2>
+  <div class="presets" id="presetBar"></div>
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="showTab('overview')">Overview</button>
+    <button class="tab-btn" onclick="showTab('all')">All Data</button>
+  </div>
+  <div id="overviewTab"></div>
+  <div id="allTab" style="display:none"></div>
+</div>
+<script>
+var presets={last7d:"Last 7 Days",ukraine:"Ukraine War",tariff2025:"Tariff War 25",rally2024:"Gold Rally 24",july2026:"July 2026",all:"Full Timeline",crash2022:"2022 Crash",svb:"SVB Crisis",election2024:"US Election 24",crash2026:"130K Crash"};
+function loadPreset(name){
+  document.getElementById("subtitle").textContent=presets[name]||name;
+  document.querySelectorAll(".preset-btn").forEach(function(b){b.classList.toggle("active",b.dataset.name===name)});
+  document.getElementById("overviewTab").innerHTML='<div class="loading">Loading...</div>';
+  document.getElementById("allTab").innerHTML='';
+  fetch("/report/"+name).then(function(r){return r.json()}).then(render).catch(function(e){document.getElementById("overviewTab").innerHTML='<div class="card" style="color:var(--red)">Error: '+e.message+'</div>'});
+}
+function render(d){
+  var wr=d.wins+d.losses>0?(d.wins/(d.wins+d.losses)*100).toFixed(1):"0";
+  var ov='<div class=grid>'+
+    '<div class=stat><div class="stat-val '+(d.return_pct>=0?"grn":"red")+'">'+(d.return_pct>=0?"+":"")+d.return_pct.toFixed(2)+'%</div><div class=stat-lbl>Return</div></div>'+
+    '<div class=stat><div class="stat-val '+(d.total_pnl>=0?"grn":"red")+'">$'+(d.total_pnl>=0?"+":"")+Math.round(d.total_pnl).toLocaleString()+'</div><div class=stat-lbl>Total P&L</div></div>'+
+    '<div class=stat><div class=stat-val style=color:#eab308>'+d.max_dd.toFixed(2)+'%</div><div class=stat-lbl>Max DD</div></div>'+
+    '<div class=stat><div class="stat-val '+(d.pf>=1?"grn":"red")+'">'+d.pf.toFixed(2)+'</div><div class=stat-lbl>Profit Factor</div></div>'+
+    '<div class=stat><div class="stat-val '+(d.end_balance>=d.start_balance?"grn":"red")+'">$'+Math.round(d.end_balance).toLocaleString()+'</div><div class=stat-lbl>End Balance</div></div>'+
+    '<div class=stat><div class=stat-val>'+d.total_trades+'</div><div class=stat-lbl>Trades</div></div>'+
+    '</div><div class=card>';
+  var items=[["Start Balance","$"+Math.round(d.start_balance).toLocaleString(),""],["End Balance","$"+Math.round(d.end_balance).toLocaleString(),d.total_pnl>=0?"grn":"red"],["Total P&L","$"+(d.total_pnl>=0?"+":"")+Math.round(d.total_pnl).toLocaleString(),d.total_pnl>=0?"grn":"red"],["Return",(d.return_pct>=0?"+":"")+d.return_pct.toFixed(2)+"%",d.return_pct>=0?"grn":"red"],["Max Drawdown",d.max_dd.toFixed(2)+"%","yel"],["Profit Factor",d.pf.toFixed(2),d.pf>=1?"grn":"red"],["Total Trades",d.total_trades,""],["Wins",d.wins,"grn"],["Losses",d.losses,"red"],["Win Rate",wr+"%",""],["Win P&L","$"+Math.round(d.win_pnl).toLocaleString(),"grn"],["Loss P&L","$"+Math.round(d.loss_pnl).toLocaleString(),"red"],["TP Hits",d.tp_hits,""],["Hedge Closes",d.hedge_closes,""],["Cleanups",d.cleanups,""],["Bars",d.bars,""]];
+  items.forEach(function(i){ov+='<div class=detail><span class=detail-lbl>'+i[0]+'</span><span class="detail-val '+(i[2]||"")+'">'+i[1]+'</span></div>'});
+  ov+="</div>";
+  document.getElementById("overviewTab").innerHTML=ov;
+  document.getElementById("allTab").innerHTML='<div class=card><pre style="font-size:10px;overflow-x:auto">'+JSON.stringify(d,null,2)+"</pre></div>";
+}
+function showTab(name){
+  document.querySelectorAll(".tab-btn").forEach(function(b){b.classList.toggle("active",b.textContent.toLowerCase().includes(name))});
+  document.getElementById("overviewTab").style.display=name==="overview"?"block":"none";
+  document.getElementById("allTab").style.display=name==="all"?"block":"none";
+}
+var bar=document.getElementById("presetBar");
+Object.keys(presets).forEach(function(k){
+  var b=document.createElement("button");
+  b.className="preset-btn";b.textContent=presets[k];b.dataset.name=k;
+  b.onclick=function(){loadPreset(k)};
+  bar.appendChild(b);
+});
+var hash=location.hash.slice(1);
+if(hash&&presets[hash])loadPreset(hash);else loadPreset("last7d");
+function openViz(){
+  var name=document.getElementById("subtitle").textContent;
+  window.open("/grid#preset="+encodeURIComponent(name),"gridViz","width=500,height=700,scrollbars=1");
+}
+</script>
+<button class=viz-btn onclick=openViz() title="Open grid viz">📊</button>
+</body>
+</html>

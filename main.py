@@ -301,6 +301,8 @@ def run_headless(preset_name):
         for mid_p in _b._walk_bar(o, h, l, c, pip_step=100):
             _b.update_sma(mid_p)
             _b.tick_prices(mid_p - spread/2, mid_p + spread/2, ts)
+            if len(_chart_micro) < 1000 and (len(_chart_micro) == 0 or round(mid_p,2) != _chart_micro[-1].get("p",0)):
+                _chart_micro.append({"p": round(mid_p,2), "a": round(_b.micro_atr, 1)})
     acct = _b.account_summary()
     wins = sum(1 for h in _b.hit_log if h.get("pnl",0) > 0)
     losses = sum(1 for h in _b.hit_log if h.get("pnl",0) < 0)
@@ -549,12 +551,378 @@ async def tick_loop():
     }))
     _loop_active = False
 
+
+
+MICRO_SUBSCRIBERS = []
+MICRO_EXPIRY = 1
+MICRO_ATR_SOURCE = "micro"
+MICRO_RUNNING = False
+MICRO_ATR_WINDOW = "1m"
+MICRO_HARD_MODE = False
+MICRO_PROFIT_TARGET_PCT = 0.1
+_last_done = None
+_micro_run_id = 0
+current_mid = 5000.0
+_chart_micro = []
+
+async def broadcast_micro(msg):
+    for ws in MICRO_SUBSCRIBERS[:]:
+        try:
+            await ws.write(("data: " + json.dumps(msg) + "\n\n").encode())
+        except Exception:
+            if ws in MICRO_SUBSCRIBERS:
+                MICRO_SUBSCRIBERS.remove(ws)
+
+def load_micro_data(start_date, end_date, tf="1m"):
+    import json, csv, concurrent.futures, threading
+    from pathlib import Path
+    cache_dir = Path("/root/forex-grid")
+    cache_file = cache_dir / f"micro_{tf}_{start_date}_{end_date}.json"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text())
+    CSV_CUTOFF = "2026-01-30"
+    TF_CSV = {"1m":"XAU_1m_data.csv","5m":"XAU_5m_data.csv","15m":"XAU_15m_data.csv","30m":"XAU_30m_data.csv","1h":"XAU_1h_data.csv","4h":"XAU_4h_data.csv","1d":"XAU_1d_data.csv"}
+    keys = []
+    csv_file = cache_dir / TF_CSV.get(tf, "")
+    if csv_file.exists():
+        try:
+            with open(csv_file) as fh:
+                reader = csv.reader(fh, delimiter=";")
+                next(reader, None)
+                for row in reader:
+                    if len(row) < 5:
+                        continue
+                    dt = row[0].replace(".", "-")[:16]
+                    d10 = dt[:10]
+                    if d10 < start_date:
+                        continue
+                    if d10 > end_date or d10 > CSV_CUTOFF:
+                        break
+                    o, h, l, c = float(row[1]), float(row[2]), float(row[3]), float(row[4])
+                    if o == h == l == c:
+                        continue
+                    keys.append({"date": dt, "open": o, "high": h, "low": l, "close": c})
+                    if len(keys) >= 50000:
+                        break
+        except Exception:
+            pass
+    # yfinance for dates after CSV cutoff
+    if end_date > CSV_CUTOFF:
+        yf_start = max(start_date, CSV_CUTOFF)
+        yf_int = "1m" if tf == "1m" else "5m"
+        yf_keys = []
+        done = threading.Event()
+        def fetch_yf():
+            nonlocal yf_keys
+            try:
+                import yfinance as yf
+                g = yf.download("GC=F", interval=yf_int, start=yf_start, end=end_date, progress=False)
+                if not g.empty:
+                    for ts, row in g.iterrows():
+                        d = row
+                        yf_keys.append({"date": ts.strftime("%Y-%m-%d %H:%M"),
+                            "open": float(d["Open"].iloc[0]) if hasattr(d["Open"], "iloc") else float(d["Open"]),
+                            "high": float(d["High"].iloc[0]) if hasattr(d["High"], "iloc") else float(d["High"]),
+                            "low": float(d["Low"].iloc[0]) if hasattr(d["Low"], "iloc") else float(d["Low"]),
+                            "close": float(d["Close"].iloc[0]) if hasattr(d["Close"], "iloc") else float(d["Close"])})
+            except: pass
+            finally: done.set()
+        t = threading.Thread(target=fetch_yf, daemon=True)
+        t.start()
+        done.wait(timeout=15)
+        keys.extend(yf_keys)
+        if keys:
+            keys.sort(key=lambda x: x["date"])
+    if keys:
+        cache_file.write_text(json.dumps(keys))
+        return keys
+    if tf == "5m":
+        p = Path("/root/forex-grid/gcf_5m.json")
+        if p.exists():
+            data = json.loads(p.read_text())
+            return [d for d in data if start_date <= d["date"][:10] <= end_date and not (d["open"] == d["high"] == d["low"] == d["close"])]
+    return []
+
+async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mode=False, profit_target_pct=0.1):
+    global MICRO_RUNNING, _last_done, _micro_run_id
+    import broker as _b
+    _micro_run_id += 1
+    my_id = _micro_run_id
+    MICRO_RUNNING = True
+    _b.balance = _b.start_balance = _b.equity_peak = 1000000.0
+    _b.orders.clear(); _b.trades.clear(); _b.hit_log.clear(); _b.closed_trades.clear()
+    _b.mr_price_history.clear(); _b.current_sma = 0.0
+    _b.current_atr = _b._atr_raw = 5.0
+    _b.micro_atr = _b._micro_atr_raw = 5.0
+    _b.current_spacing = 1500
+    _b.current_tp = round(1500 * _b.TP_MULTIPLIER)
+    bars_per_hour = 60 if tf == "1m" else 12
+    _b.expiry_bars = expiry_hours * bars_per_hour
+    _b.trade_age.clear()
+    _b.atr_source = atr_source
+    _b.daily_trade_count = 0; _b.total_trades = 0
+    _b.lot_size = _b.BASE_LOT
+    _b._prev_hedge_state = True
+    global speed_multiplier
+    sim_tf_seconds = 60 if tf == "1m" else 300
+    _b.micro_atr_window = MICRO_ATR_WINDOW
+    _b._micro_atr_bar_buffer = []
+    if hard_mode:
+        _b.HARD_MODE = True
+        _b.HARD_SPACING_PIPS = 10000
+        _b.PROFIT_TARGET_PCT = profit_target_pct
+        _b.hard_profit_target = 1000000.0 * profit_target_pct / 100.0
+        _b.cumulative_pnl = 0.0
+    _b.place_orders(kf[0]["open"])
+    total = len(kf)
+    atr_history = []
+    for idx, bar in enumerate(kf):
+        if not MICRO_RUNNING:
+            break
+        o, h, l, c = bar["open"], bar["high"], bar["low"], bar["close"]
+        if o == h == l == c:
+            continue
+        spread = max(20, min(150, _b.current_atr * 0.1)) if _b.DYNAMIC_SPREAD else _b.BASE_SPREAD
+        ts = datetime.strptime(bar["date"], "%Y-%m-%d %H:%M")
+        for mid_p in _b._walk_bar(o, h, l, c, pip_step=100):
+            _b.update_sma(mid_p)
+            _b.tick_prices(mid_p - spread/2, mid_p + spread/2, ts)
+        _b.feed_micro_bar(high=h, low=l, sim_tf_seconds=sim_tf_seconds)
+        _b.apply_atr_spacing()
+        _b.update_trade_ages(mid_p - spread/2, mid_p + spread/2, ts, atr_val=_b.micro_atr)
+        atr_history.append(round(_b.micro_atr, 1))
+        if len(atr_history) > 500:
+            atr_history = atr_history[-500:]
+        if idx % 5 == 0:
+            acct = _b.account_summary()
+            pos = _b.open_positions(mid_p - spread/2, mid_p + spread/2, ts)
+            ages = {t.id: _b.trade_age.get(t.id, 0) for t in _b.trades}
+            gl = [round(o.price, 2) for o in _b.orders]
+            msg = {"type": "tick", "bar": idx, "total": total,
+                "bid": round(mid_p - spread/2, 2), "ask": round(mid_p + spread/2, 2),
+                "mid": round(mid_p, 2), "balance": _b.balance, "equity": acct["equity"],
+                "positions": pos, "hit_log": list(_b.hit_log[-30:]),
+                "spacing": _b.current_spacing, "tp": _b.current_tp,
+                "micro_atr": round(_b.micro_atr, 1), "macro_atr": round(_b.current_atr, 1),
+                "atr_source": _b.atr_source,
+                "trade_ages": ages, "expiry_bars": _b.expiry_bars,
+                "grid_levels": gl, "atr_history": atr_history,
+                "tf": tf,
+                "hard_mode": _b.HARD_MODE,
+                "hard_profit_target": _b.hard_profit_target,
+                "cumulative_pnl": round(_b.cumulative_pnl, 2),
+                "profit_target_pct": _b.PROFIT_TARGET_PCT,
+                "micro_atr_window": _b.micro_atr_window}
+            await broadcast_micro(msg)
+            sleep_s = max(0, 0.01 - (speed_multiplier / 1000.0) * 0.01)
+            await asyncio.sleep(sleep_s)
+    acct = _b.account_summary()
+    wins = sum(1 for h in _b.hit_log if h.get("pnl", 0) > 0)
+    losses = sum(1 for h in _b.hit_log if h.get("pnl", 0) < 0)
+    won = round(sum(h["pnl"] for h in _b.hit_log if h["pnl"] > 0), 2)
+    lost = round(sum(h["pnl"] for h in _b.hit_log if h["pnl"] < 0), 2)
+    _done_msg = {"type": "done", "balance": _b.balance,
+        "return": round((_b.balance - 1000000) / 10000, 2),
+        "dd": round(_b.equity_peak - min(_b.equity_peak, _b.balance), 2),
+        "trades": _b.total_trades,
+        "tick_count": idx + 1,
+        "total_bars": total,
+        "wins": wins, "losses": losses,
+        "win_rate": round(wins / (wins + losses) * 100, 1) if (wins + losses) else 0,
+        "won_amount": won, "lost_amount": lost,
+        "micro_atr": round(_b.micro_atr, 1), "final_spacing": _b.current_spacing}
+    _done_msg["chart"] = _chart_micro[-500:]
+    _last_done = _done_msg
+    if my_id == _micro_run_id:
+        await broadcast_micro(_done_msg)
+        MICRO_RUNNING = False
+
+async def stream_micro_handler(request):
+    global MICRO_SUBSCRIBERS, _last_done
+    ws = web.StreamResponse()
+    ws.headers["Content-Type"] = "text/event-stream"
+    ws.headers["Cache-Control"] = "no-cache"
+    ws.headers["Connection"] = "keep-alive"
+    await ws.prepare(request)
+    MICRO_SUBSCRIBERS.append(ws)
+    init_msg = {"type": "init", "expiry": MICRO_EXPIRY, "atr_source": MICRO_ATR_SOURCE,
+        "micro_atr_window": MICRO_ATR_WINDOW}
+    try:
+        await ws.write(("data: " + json.dumps(init_msg) + "\n\n").encode())
+        if _last_done is not None:
+            await ws.write(("data: " + json.dumps(_last_done) + "\n\n").encode())
+        while True:
+            await asyncio.sleep(30)
+            await ws.write(b":keepalive\n\n")
+    except:
+        pass
+    if ws in MICRO_SUBSCRIBERS:
+        MICRO_SUBSCRIBERS.remove(ws)
+    return ws
+
+async def micro_start_handler(request):
+    global MICRO_EXPIRY, MICRO_ATR_SOURCE, MICRO_RUNNING, MICRO_ATR_WINDOW, speed_multiplier
+    import broker as _b
+    global _chart_micro, _last_done
+    MICRO_RUNNING = False
+    _chart_micro.clear()
+    _last_done = None
+
+    await asyncio.sleep(0.3)
+    try:
+        body = await request.json()
+        preset_name = body.get("preset", "yesterday")
+        MICRO_EXPIRY = int(body.get("expiry", 1))
+        if MICRO_EXPIRY <= 0:
+            MICRO_EXPIRY = 9999
+        else:
+            MICRO_EXPIRY = max(1, min(9999, MICRO_EXPIRY))
+        MICRO_ATR_SOURCE = body.get("atr_source", "micro")
+        MICRO_HARD_MODE = body.get("hard_mode", False)
+        MICRO_PROFIT_TARGET_PCT = float(body.get("profit_target", 0.1))
+        speed_multiplier = int(body.get("speed", 100))
+        lot = float(body.get("lot", _b.BASE_LOT))
+        _b.lot_size = lot
+        aw = body.get("atr_window", "")
+        if aw in ("1m", "5m", "15m"):
+            _b.set_micro_atr_window(aw)
+            MICRO_ATR_WINDOW = aw
+    except Exception:
+        preset_name = "yesterday"
+        MICRO_EXPIRY = 1
+        MICRO_ATR_SOURCE = "micro"
+        MICRO_HARD_MODE = False
+        MICRO_PROFIT_TARGET_PCT = 0.1
+    tf = body.get("tf", "1m") if isinstance(body, dict) else "1m"
+    if isinstance(body, dict) and body.get("start") and body.get("end"):
+        p = {"start": body["start"], "end": body["end"]}
+    else:
+        p = PRESETS.get(preset_name)
+    if not p:
+        return web.json_response({"error": "Unknown preset"}, status=400)
+    kf = load_micro_data(p["start"], p["end"], tf)
+    if not kf:
+        return web.json_response({"error": f"No {tf} data"}, status=400)
+    async def run_micro_sim_wrapped():
+        try:
+            await run_micro_sim(kf, MICRO_EXPIRY, MICRO_ATR_SOURCE, tf,
+                hard_mode=MICRO_HARD_MODE, profit_target_pct=MICRO_PROFIT_TARGET_PCT)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            await broadcast_micro({"type": "done", "error": str(e)})
+    asyncio.ensure_future(run_micro_sim_wrapped())
+    return web.json_response({"status": "started", "bars": len(kf), "expiry": MICRO_EXPIRY,
+        "atr_source": MICRO_ATR_SOURCE, "micro_atr_window": MICRO_ATR_WINDOW,
+        "tf": tf, "hard_mode": MICRO_HARD_MODE, "profit_target": MICRO_PROFIT_TARGET_PCT})
+
+async def micro_atr_source_handler(request):
+    global MICRO_ATR_SOURCE
+    import broker as _b
+    try:
+        body = await request.json()
+        source = body.get("source", "micro")
+        if source not in ("micro", "macro"):
+            return web.json_response({"error": "source must be micro or macro"}, status=400)
+        _b.switch_atr_source(source)
+        MICRO_ATR_SOURCE = source
+        await broadcast_micro({"type": "atr_switch", "atr_source": source,
+            "micro_atr": round(_b.micro_atr, 1), "macro_atr": round(_b.current_atr, 1),
+            "spacing": _b.current_spacing})
+        return web.json_response({"atr_source": source, "spacing": _b.current_spacing})
+    except Exception:
+        return web.json_response({"error": "invalid body"}, status=400)
+
+async def micro_speed_handler(request):
+    global speed_multiplier
+    try:
+        body = await request.json()
+        speed_multiplier = max(1, min(10000, int(body.get("speed", 100))))
+    except:
+        pass
+    return web.json_response({"speed": speed_multiplier})
+
+async def micro_atr_window_handler(request):
+    global MICRO_ATR_WINDOW
+    import broker as _b
+    try:
+        body = await request.json()
+        window = body.get("window", "1m")
+        if window in ("1m", "5m", "15m"):
+            _b.set_micro_atr_window(window)
+            _b._micro_atr_raw = 5.0
+            _b.micro_atr = 5.0
+            MICRO_ATR_WINDOW = window
+            await broadcast_micro({"type": "atr_window", "micro_atr_window": window,
+                "micro_atr": round(_b.micro_atr, 1), "spacing": _b.current_spacing})
+            return web.json_response({"micro_atr_window": window})
+        return web.json_response({"error": "invalid window"}, status=400)
+    except Exception:
+        return web.json_response({"error": "invalid body"}, status=400)
+
+async def micro_report_handler(request):
+    preset_name = request.match_info.get("preset", "last7d")
+    tf = request.query.get("tf", "1m")
+    atr_source = request.query.get("atr", "micro")
+    p = PRESETS.get(preset_name)
+    if not p:
+        return web.json_response({"error": "Unknown preset"}, status=400)
+    kf = load_micro_data(p["start"], p["end"], tf)
+    if not kf:
+        return web.json_response({"error": "no data"}, status=400)
+    import broker as _b
+    _b.balance = _b.start_balance = _b.equity_peak = 1000000.0
+    _b.orders.clear(); _b.trades.clear(); _b.hit_log.clear()
+    _b.mr_price_history.clear(); _b.current_sma = 0.0
+    _b.current_atr = _b._atr_raw = 5.0
+    _b.micro_atr = _b._micro_atr_raw = 5.0
+    _b.current_spacing = 1500
+    _b.trade_age.clear()
+    _b.daily_trade_count = 0; _b.total_trades = 0
+    _b.lot_size = _b.BASE_LOT
+    _b.atr_source = atr_source
+    sim_tf_seconds = 60 if tf == "1m" else 300
+    _b.micro_atr_window = MICRO_ATR_WINDOW
+    _b._micro_atr_bar_buffer = []
+    _b.place_orders(kf[0]["open"])
+    total = len(kf)
+    atr_history = []
+    for idx, bar in enumerate(kf):
+        o, h, l, c = bar["open"], bar["high"], bar["low"], bar["close"]
+        if o == h == l == c:
+            continue
+        spread = max(20, min(150, _b.current_atr * 0.1)) if _b.DYNAMIC_SPREAD else _b.BASE_SPREAD
+        ts = datetime.strptime(bar["date"], "%Y-%m-%d %H:%M")
+        for mid_p in _b._walk_bar(o, h, l, c, pip_step=100):
+            _b.update_sma(mid_p)
+            _b.tick_prices(mid_p - spread/2, mid_p + spread/2, ts)
+        _b.feed_micro_bar(high=h, low=l, sim_tf_seconds=sim_tf_seconds)
+        _b.apply_atr_spacing()
+        _b.update_trade_ages(mid_p - spread/2, mid_p + spread/2, ts, atr_val=_b.micro_atr)
+        atr_history.append(round(_b.micro_atr, 1))
+        if len(atr_history) > 500:
+            atr_history = atr_history[-500:]
+    acct = _b.account_summary()
+    wins = sum(1 for h in _b.hit_log if h.get("pnl", 0) > 0)
+    losses = sum(1 for h in _b.hit_log if h.get("pnl", 0) < 0)
+    return web.json_response({
+        "balance": _b.balance, "return_pct": round((_b.balance - 1000000) / 10000, 2),
+        "trades": _b.total_trades, "wins": wins, "losses": losses,
+        "win_rate": round(wins / (wins + losses) * 100, 1) if (wins + losses) else 0,
+        "final_micro_atr": round(_b.micro_atr, 1), "final_spacing": _b.current_spacing,
+        "atr_history": atr_history, "bars": total,
+    })
+
+async def grid_micro_page(request):
+    from pathlib import Path
+    return web.FileResponse(Path(__file__).parent / "index-micro.html")
 async def on_startup(app):
     global _loop_active
     _loop_active = True
     asyncio.ensure_future(tick_loop())
 
 def main():
+    import sys
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 3001
     app = web.Application()
     app.on_startup.append(on_startup)
     app.router.add_get("/stream", stream_handler)
@@ -565,8 +933,37 @@ def main():
     app.router.add_post("/toggle_trend_filter", toggle_trend_filter)
     app.router.add_get("/report/{preset}", report_handler)
     app.router.add_get("/", index)
+    
+    app.router.add_get("/stream-micro", stream_micro_handler)
+    app.router.add_post("/micro-start", micro_start_handler)
+    app.router.add_post("/atr-source", micro_atr_source_handler)
+    app.router.add_post("/micro-speed", micro_speed_handler)
+    app.router.add_post("/micro-atr-window", micro_atr_window_handler)
+    app.router.add_get("/report-micro/{preset}", micro_report_handler)
+    app.router.add_get("/grid-micro", grid_micro_page)
+    async def micro_close_trade_handler(request):
+        import broker as _b
+        try:
+            body = await request.json()
+            trade_id = body.get("trade_id", "")
+            if not trade_id:
+                return web.json_response({"error": "no trade_id"}, status=400)
+            t = None
+            for tr in _b.trades:
+                if tr.id == trade_id:
+                    t = tr
+                    break
+            if not t:
+                return web.json_response({"error": "trade not found"}, status=404)
+            ts = datetime.now()
+            pnl = _b.close_trade(trade_id, current_mid, current_mid, ts, "MANUAL")
+            return web.json_response({"status": "closed", "trade_id": trade_id, "pnl": pnl})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
+    app.router.add_post("/micro-close-trade", micro_close_trade_handler)
     app.router.add_get("/{path:.*}", static_handler)
-    web.run_app(app, host="127.0.0.1", port=3001)
+    web.run_app(app, host="127.0.0.1", port=port)
 
 if __name__ == "__main__":
     main()

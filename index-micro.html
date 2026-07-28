@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Micro Sim Grid</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f1117;--card:#1a1d28;--text:#e0e0e0;--dim:#888;--accent:#4fc3f7;--green:#4caf50;--red:#f44336;--orange:#ff9800;--yellow:#ffeb3b;--border:#2a2d3a;--hard:#ff6b6b}
+body{font-family:ui-monospace,monospace;background:var(--bg);color:var(--text);font-size:13px;height:100vh;overflow:hidden}
+#sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:#1a1d28;padding:12px;padding-top:40px;overflow-y:auto;z-index:10;box-shadow:2px 0 8px rgba(0,0,0,0.3);transition:transform .25s;transform:translateX(0)}
+#sidebar.hidden{transform:translateX(-100%)}
+#toggle:hover{background:var(--accent);color:#000}
+#toggle{position:fixed;left:8px;top:8px;z-index:20;background:rgba(26,29,40,0.85);border:1px solid rgba(255,255,255,0.1);color:var(--text);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1}
+#main{padding:12px;flex:1;overflow-y:auto;height:100vh}
+
+.sidebar h2{font-size:14px;color:var(--accent);margin-bottom:12px}
+.ctrl-group{margin-bottom:10px}
+.ctrl-group label{display:block;font-size:10px;color:var(--dim);text-transform:uppercase;margin-bottom:2px}
+.ctrl-group select,.ctrl-group input,.ctrl-group button{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 8px;border-radius:4px;font-size:12px;font-family:inherit}
+.ctrl-group button{cursor:pointer;background:var(--accent);color:#000;font-weight:700;border:none;margin-top:2px}
+.ctrl-group button:disabled{opacity:.4;cursor:not-allowed}
+.ctrl-group button.danger{background:var(--red)}
+.top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.top h1{font-size:18px;color:var(--accent)}
+#progress{height:4px;background:var(--bg);border-radius:2px;margin-bottom:6px;overflow:hidden}
+#progress .fill{height:100%;background:var(--accent);width:0%;transition:width .3s}
+.status{font-size:11px;color:var(--dim);margin-bottom:6px}
+#chart{background:var(--card);border:1px solid var(--border);border-radius:6px;height:180px;margin-bottom:8px;position:relative;overflow:hidden}
+#chart canvas{width:100%;height:100%;display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-bottom:8px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:6px 8px}
+.card .lbl{font-size:9px;color:var(--dim);text-transform:uppercase}
+.card .val{font-size:14px;font-weight:700;margin-top:1px}
+.val.green{color:var(--green)}.val.red{color:var(--red)}.val.orange{color:var(--orange)}.val.blue{color:var(--accent)}.val.hard{color:var(--hard)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.col{flex:1;min-width:260px}
+.col h3{font-size:11px;color:var(--dim);margin-bottom:4px}
+#hitlog,#tradeages{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;max-height:240px;overflow-y:auto;font-size:11px;line-height:1.5}
+.hit{display:flex;gap:4px;padding:2px 0;border-bottom:1px solid var(--border);font-size:10px}
+.hit .t{color:var(--dim);min-width:40px}.hit .s{font-weight:700;min-width:60px;font-size:10px}
+.s.tp{color:var(--green)}.s.hedge{color:var(--red)}.s.cleanup{color:var(--yellow)}.s.expiry{color:var(--orange)}.s.profit{color:var(--hard)}
+.hit .pnl{min-width:44px;text-align:right;font-size:10px}
+.pnl.pos{color:var(--green)}.pnl.neg{color:var(--red)}
+.pos-row{display:flex;gap:6px;padding:2px 0;border-bottom:1px solid var(--border);align-items:center;font-size:10px}
+.pos-row .bar{flex:1;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;min-width:40px}
+.pos-row .bar .fill{height:100%;border-radius:3px;transition:width .3s}
+#opentrades{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;max-height:300px;overflow-y:auto;font-size:10px;line-height:1.5}
+.ot{display:grid;grid-template-columns:50px 55px 55px 55px 55px 40px;gap:2px;padding:3px 0;border-bottom:1px solid var(--border)}
+.ot .hdr{color:var(--dim);font-size:9px;font-weight:700;text-transform:uppercase}
+.ot .v{text-align:right}
+.ot .side-buy{color:var(--green)}.ot .side-sell{color:var(--red)}
+</style></head><body>
+<button id="toggle" onclick="toggleSidebar()">&#9776;</button>
+<div id="sidebar">
+  <h2>Controls</h2>
+  <div class="ctrl-group"><label>TF</label><select id="tf" onchange="tfChanged()"><option value="1m">1m</option><option value="5m">5m</option></select></div>
+  <div class="ctrl-group"><label>Lot</label><select id="lotSel"><option value="0.0001">0.0001</option><option value="0.001" selected>0.001</option><option value="0.01">0.01</option><option value="0.1">0.1</option></select></div>
+  <div class="ctrl-group"><label>From</label><input type="date" id="dateFrom" value="2026-01-20"></div>
+  <div class="ctrl-group"><label>To</label><input type="date" id="dateTo" value="2026-07-28"></div>
+  <div class="ctrl-group"><label>Speed</label><select id="speedSel"><option value="10">10x</option><option value="100">100x</option><option value="1000">1Kx</option><option value="10000" selected>10Kx</option></select></div>
+  <div class="ctrl-group"><button id="startBtn" onclick="startSim()">Start</button></div>
+  <div class="ctrl-group"><button id="stopBtn" onclick="stopSim()" disabled>Stop</button></div>
+
+</div>
+<div id="main">
+  <div class="top"><h1>Micro</h1></div>
+  <div id="progress"><div class="fill" id="progFill"></div></div>
+  <div class="status" id="status">Ready.</div>
+  <div id="chart"><canvas id="chartCanvas"></canvas></div>
+  <div class="cards" id="cards">
+    <div class="card"><div class="lbl">Price</div><div class="val blue" id="cPrice">--</div></div>
+    <div class="card"><div class="lbl">Balance</div><div class="val" id="cBal">1,000,000</div></div>
+    <div class="card"><div class="lbl">Equity</div><div class="val" id="cEqu">1,000,000</div></div>
+    <div class="card"><div class="lbl">Return</div><div class="val" id="cRet">0.00%</div></div>
+    <div class="card"><div class="lbl">Spacing</div><div class="val" id="cSpc">1500</div></div>
+    <div class="card"><div class="lbl">Trades</div><div class="val" id="cTrd">0</div></div>
+    <div class="card"><div class="lbl">Bars</div><div class="val" id="cBar">0/0</div></div>
+  </div>
+  <div class="row">
+    <div class="col"><h3>Hit Log</h3><div id="hitlog"><span style="color:var(--dim)">...</span></div></div>
+    <div class="col"><h3>Open Trades <span style="color:var(--dim);font-weight:400" id="totRisk">(0% risk)</span></h3><div id="opentrades"><span style="color:var(--dim)">None</span></div></div>
+  </div>
+</div>
+<script>
+var evtSource=null,chartData=[],chartCanvas,chartCtx,running=false,hardMode=false,drawPending=false,doneReceived=false,sidebarVisible=true
+
+function $(i){return document.getElementById(i)}
+
+function toggleSidebar(){
+  sidebarVisible=!sidebarVisible
+  $("sidebar").classList.toggle("hidden",!sidebarVisible)
+
+  setTimeout(function(){if(chartCanvas){chartCanvas.width=chartCanvas.parentElement.clientWidth;chartCanvas.height=chartCanvas.parentElement.clientHeight;drawChart()}},260)
+}
+
+function initChart(){
+  chartCanvas=$("chartCanvas");chartCtx=chartCanvas.getContext("2d")
+  chartCanvas.width=chartCanvas.parentElement.clientWidth
+  chartCanvas.height=chartCanvas.parentElement.clientHeight
+}
+
+function downsample(data,maxPts){
+  if(data.length<=maxPts)return data
+  var step=data.length/maxPts,out=[]
+  for(var i=0;i<maxPts;i++)out.push(data[Math.floor(i*step)])
+  return out
+}
+
+function drawChart(){
+  if(!chartData.length)return
+  var ctx=chartCtx,w=chartCanvas.width,h=chartCanvas.height
+  ctx.clearRect(0,0,w,h)
+  var pts=downsample(chartData,Math.min(400,w))
+  var prices=pts.map(function(d){return d.p}),atrs=pts.map(function(d){return d.a||0})
+  var pMin=Math.min.apply(null,prices),pMax=Math.max.apply(null,prices),pRng=pMax-pMin||1
+  var aMin=Math.min.apply(null,atrs),aMax=Math.max.apply(null,atrs),aRng=aMax-aMin||1
+  var step=w/pts.length,atrH=h*0.35
+  function yP(v){return h*0.02+(v-pMin)/pRng*(h*0.63)}
+  function yA(v){return h*0.67+(v-aMin)/aRng*atrH}
+  ctx.beginPath();ctx.strokeStyle="rgba(255,255,255,0.06)";ctx.lineWidth=1
+  for(var i=0;i<6;i++){var gy=yP(pMin+pRng*i/5);ctx.moveTo(0,gy);ctx.lineTo(w,gy)}
+  ctx.stroke()
+  ctx.beginPath();ctx.strokeStyle="rgba(255,152,0,0.35)";ctx.lineWidth=1
+  pts.forEach(function(d,i){var x=i*step;if(i===0)ctx.moveTo(x,yA(d.a));else ctx.lineTo(x,yA(d.a))})
+  ctx.stroke()
+  ctx.beginPath();ctx.strokeStyle="#4fc3f7";ctx.lineWidth=1.5
+  pts.forEach(function(d,i){var x=i*step;if(i===0)ctx.moveTo(x,yP(d.p));else ctx.lineTo(x,yP(d.p))})
+  ctx.stroke()
+  ctx.fillStyle="rgba(255,255,255,0.15)";ctx.font="9px monospace";ctx.fillText("ATR",4,h-2)
+}
+
+function tfChanged(){
+  var tf=$("tf").value
+  if(running){
+    fetch("/micro-atr-window",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({window:tf})}).catch(function(){})
+  }
+}
+
+function startSim(){
+  if(sidebarVisible)toggleSidebar()
+  var tf=$("tf").value
+  $("startBtn").disabled=true;$("stopBtn").disabled=false;running=true;doneReceived=false
+  $("status").textContent="Starting..."
+  chartData=[]
+  if(evtSource)evtSource.close()
+  var spd=parseInt($("speedSel").value),lot=parseFloat($("lotSel").value)
+  var start=$("dateFrom").value,end=$("dateTo").value
+  console.log("FETCH_START");fetch("/micro-start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    start:start,end:end,expiry:0,atr_source:"micro",tf:tf,lot:lot,
+    hard_mode:false,speed:spd,atr_window:tf
+  })})
+  .then(function(r){console.log("FETCH_OK_"+r.status);return r.json()}).then(function(d){console.log("FETCH_DATA:"+JSON.stringify(d).slice(0,100));
+    if(d.error){$("status").textContent="Error: "+d.error;running=false;$("startBtn").disabled=false;$("stopBtn").disabled=true;return}
+    $("status").textContent="Running "+d.bars+" bars"
+    evtSource=new EventSource("/stream-micro")
+    evtSource.onmessage=function(e){
+      try{var msg=JSON.parse(e.data)
+      if(msg.type==="init"){return}
+      if(msg.type==="done"){
+        $("status").textContent="Done. R:"+msg.return+"% DD:"+msg.dd+"% T:"+msg.trades
+        if(msg.chart&&msg.chart.length){chartData=msg.chart;drawChart()}
+        doneReceived=true;evtSource.close();evtSource=null;running=false;$("startBtn").disabled=false;$("stopBtn").disabled=true;return
+      }
+      updateUI(msg)}catch(err){}
+    }
+    evtSource.onerror=function(){if(!doneReceived&&evtSource){$("status").textContent="SSE disconnected";evtSource=null}}
+  }).catch(function(e){console.log("FETCH_ERR_"+e);$("status").textContent="Error: "+e;running=false;$("startBtn").disabled=false;$("stopBtn").disabled=true})
+}
+
+function stopSim(){
+  running=false;if(evtSource)evtSource.close()
+  $("startBtn").disabled=false;$("stopBtn").disabled=true;$("status").textContent="Stopped."
+}
+
+function updateUI(msg){
+  $("cPrice").textContent=msg.mid?msg.mid.toFixed(2):"--"
+  $("cBal").textContent=Number(msg.balance||0).toLocaleString("en",{maximumFractionDigits:0})
+  $("cEqu").textContent=Number(msg.equity||0).toLocaleString("en",{maximumFractionDigits:0})
+  var ret=msg.balance?((msg.balance-1000000)/1000000*100).toFixed(2):0
+  $("cRet").textContent=(ret>=0?"+":"")+ret+"%";$("cRet").className="val"+(ret>=0?" green":" red")
+  $("cBar").textContent=(msg.bar||0)+"/"+(msg.total||0)
+  if(msg.total){$("progFill").style.width=((msg.bar||0)/msg.total*100).toFixed(0)+"%"}
+  $("cSpc").textContent=msg.spacing||"1500"
+  $("cTrd").textContent=msg.positions?msg.positions.length:0
+  if(msg.hit_log&&msg.hit_log.length){
+    var html="",hits=msg.hit_log.slice(-20).reverse()
+    for(var i=0;i<hits.length;i++){
+      var h=hits[i],cls=""
+      if(h.side&&h.side.indexOf("TP-")>=0)cls="tp"
+      else if(h.side&&h.side.indexOf("HEDGE")>=0)cls="hedge"
+      else if(h.side&&h.side.indexOf("PROFIT")>=0)cls="profit"
+      else if(h.side&&h.side.indexOf("EXPIRY")>=0)cls="expiry"
+      var pc=(h.pnl||0)>=0?"pos":"neg"
+      html+='<div class="hit"><span class="t">'+(h.t||"").slice(0,5)+'</span><span class="s '+cls+'">'+(h.side||"").slice(0,14)+'</span><span class="pnl '+pc+'">'+((h.pnl||0)>=0?"+":"")+Number(h.pnl||0).toFixed(1)+'</span></div>'
+    }
+    $("hitlog").innerHTML=html
+  }
+  if(msg.positions){
+    var bal=msg.balance||1000000,ot=[],totRiskNeg=0
+    for(var i=0;i<msg.positions.length;i++){
+      var p=msg.positions[i],rsk=p.pnl/bal*100
+      if(rsk<0)totRiskNeg+=Math.abs(rsk)
+      var sideCls=p.side==="buy"?"side-buy":"side-sell"
+      ot.push('<div class="ot"><span class="v '+sideCls+'">'+(p.side||"").toUpperCase().slice(0,4)+'</span>')
+      ot.push('<span class="v">'+p.entry+'</span><span class="v">'+(p.tp||"--")+'</span>')
+      ot.push('<span class="v '+(p.pnl>=0?"green":"red")+'">'+(p.pnl>=0?"+":"")+p.pnl.toFixed(1)+'</span>')
+      ot.push('<span class="v '+(rsk<0?"red":"green")+'">'+(rsk>=0?"+":"")+rsk.toFixed(2)+'%</span>')
+      ot.push('<span class="v">'+p.dur+'</span></div>')
+    }
+    $("opentrades").innerHTML=ot.length?'<div class="ot"><span class="hdr">Side</span><span class="hdr v">Entry</span><span class="hdr v">TP</span><span class="hdr v">P&L</span><span class="hdr v">Risk</span><span class="hdr v">Age</span></div>'+ot.join(''):'<span style="color:var(--dim)">None</span>'
+    $("totRisk").textContent='('+totRiskNeg.toFixed(2)+'% risk)'
+  }
+  if(msg.mid){chartData.push({p:msg.mid,a:msg.micro_atr||0});if(chartData.length>500)chartData=chartData.slice(-500);drawChart()}
+}
+
+window.addEventListener("resize",function(){
+  if(chartCanvas){chartCanvas.width=chartCanvas.parentElement.clientWidth;chartCanvas.height=chartCanvas.parentElement.clientHeight;drawChart()}
+})
+initChart()
+</script></body></html>
