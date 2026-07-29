@@ -898,7 +898,7 @@ async def micro_atr_window_handler(request):
     try:
         body = await request.json()
         window = body.get("window", "1m")
-        if window in ("1m", "5m", "15m"):
+        if window in ("1m", "5m", "15m", "1h", "4h", "1D"):
             _b.set_micro_atr_window(window)
             _b._micro_atr_raw = 5.0
             _b.micro_atr = 5.0

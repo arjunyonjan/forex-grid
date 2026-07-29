@@ -629,7 +629,7 @@ def feed_micro_bar(high, low, sim_tf_seconds=60):
     if sim_tf_seconds <= 0:
         sim_tf_seconds = 60
     _micro_atr_bar_buffer.append((high, low))
-    tf_seconds = {"1m": 60, "5m": 300, "15m": 900}
+    tf_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1D": 86400}
     window_secs = tf_seconds.get(micro_atr_window, 60)
     bars_needed = max(1, window_secs // sim_tf_seconds)
     if len(_micro_atr_bar_buffer) >= bars_needed:
@@ -642,6 +642,6 @@ def feed_micro_bar(high, low, sim_tf_seconds=60):
 
 def set_micro_atr_window(window):
     global micro_atr_window, _micro_atr_bar_buffer
-    if window in ("1m", "5m", "15m"):
+    if window in ("1m", "5m", "15m", "1h", "4h", "1D"):
         micro_atr_window = window
         _micro_atr_bar_buffer = []
