@@ -150,7 +150,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   <div class="status" id="statusBar"><span class="dot gray" id="statusDot"></span><span id="status">Ready. Select dates and Start.</span></div>
   <div id="chart"><canvas id="chartCanvas"></canvas></div>
   <div class="cards" id="cards">
-    <div class="card blue"><div class="lbl">Price</div><div class="val blue" id="cPrice">--</div></div>
+    <div class="card blue"><div class="lbl">Price <span id="cTime" style="font-weight:400;color:var(--dim)">--</span></div><div class="val blue" id="cPrice">--</div></div>
     <div class="card green"><div class="lbl">Balance</div><div class="val" id="cBal">1,000,000</div></div>
     <div class="card green"><div class="lbl">Equity</div><div class="val" id="cEqu">1,000,000</div></div>
     <div class="card purple"><div class="lbl">Return</div><div class="val" id="cRet">0.00%</div></div>
@@ -311,6 +311,7 @@ function stopSim(){
 }
 function updateUI(msg){
   $("cPrice").textContent=msg.mid?msg.mid.toFixed(2):"--"
+  $("cTime").textContent=msg.ts||"--"
   $("cBal").textContent=Number(msg.balance||0).toLocaleString("en",{maximumFractionDigits:0})
   $("cEqu").textContent=Number(msg.equity||0).toLocaleString("en",{maximumFractionDigits:0})
   var ret=msg.balance?((msg.balance-1000000)/1000000*100).toFixed(2):0
