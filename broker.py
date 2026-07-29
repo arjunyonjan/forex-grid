@@ -154,7 +154,7 @@ def force_close_trade(trade, bid, ask, now_ts, reason="EXPIRY"):
         ts_str = now_ts.strftime("%Y-%m-%d %H:%M")
         et_str = trade.entry_time.strftime("%Y-%m-%d %H:%M") if hasattr(trade.entry_time, "strftime") else time.strftime("%Y-%m-%d %H:%M", time.localtime(trade.entry_time))
     hit_log.append({"t": now_str, "side": reason + "-" + trade.side.upper(), "entry": round(trade.price, 2), "exit": round(exit_px, 2), "price": round(exit_px, 2), "pnl": round(gross, 2), "dur": _fmt_dur(trade.entry_time, now_ts), "entry_time": et_str, "exit_time": ts_str})
-    closed_trades.append({"t": now_str, "side": reason + "-" + trade.side.upper(), "entry": round(trade.price, 2), "exit": round(exit_px, 2), "pnl": round(gross, 2), "entry_time": et_str, "exit_time": ts_str})
+    closed_trades.append({"t": now_str, "side": reason + "-" + trade.side.upper(), "entry": round(trade.price, 2), "exit": round(exit_px, 2), "pnl": round(gross, 2), "dur": _fmt_dur(trade.entry_time, now_ts), "entry_time": et_str, "exit_time": ts_str})
     trade.close_pct = 1.0
     _remove_safe(trades, trade)
     _replenish_order(trade.side, trade.price, trade.level_idx)
@@ -179,7 +179,7 @@ def close_trade(trade_id, bid, ask, now_ts, reason="MANUAL"):
         et_str = t.entry_time.strftime("%Y-%m-%d %H:%M") if hasattr(t.entry_time, "strftime") else time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time))
         exit_px = bid if t.side == "buy" else ask
         hit_log.append({"t": now_str, "side": reason + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(exit_px, 2), "price": round(exit_px, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": et_str, "exit_time": ts_str})
-        closed_trades.append({"t": now_str, "side": reason + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(exit_px, 2), "pnl": round(gross, 2), "entry_time": et_str, "exit_time": ts_str})
+        closed_trades.append({"t": now_str, "side": reason + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(exit_px, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": et_str, "exit_time": ts_str})
         trades.remove(t)
         if t.id in trade_age:
             del trade_age[t.id]
@@ -206,7 +206,7 @@ def close_all_trades(bid, ask, now_ts, reason="PROFIT-TARGET"):
             et_str = t.entry_time.strftime("%Y-%m-%d %H:%M") if hasattr(t.entry_time, "strftime") else time.strftime("%Y-%m-%d %H:%M", time.localtime(t.entry_time))
         exit_px = bid if t.side == "buy" else ask
         hit_log.append({"t": now_str, "side": reason + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(exit_px, 2), "price": round(exit_px, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": et_str, "exit_time": ts_str})
-        closed_trades.append({"t": now_str, "side": reason + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(exit_px, 2), "pnl": round(gross, 2), "entry_time": et_str, "exit_time": ts_str})
+        closed_trades.append({"t": now_str, "side": reason + "-" + t.side.upper(), "entry": round(t.price, 2), "exit": round(exit_px, 2), "pnl": round(gross, 2), "dur": _fmt_dur(t.entry_time, now_ts), "entry_time": et_str, "exit_time": ts_str})
     trades.clear()
     orders.clear()
     cumulative_pnl += total_closed
