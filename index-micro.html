@@ -129,7 +129,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   <div class="ctrl-group"><label>Timeframe <span class="hint">TF</span></label><select id="tf"><option value="1m">1m</option><option value="5m">5m</option></select></div>
   <div class="ctrl-row">
     <div class="ctrl-group"><label>Lot</label><select id="lotSel"><option value="0.0001">0.0001</option><option value="0.001" selected>0.001</option><option value="0.01">0.01</option><option value="0.1">0.1</option></select></div>
-    <div class="ctrl-group"><label>Speed</label><select id="speedSel" onchange="changeSpeed(this.value)"><option value="1">1x</option><option value="10">10x</option><option value="100" selected>100x</option><option value="1000">1Kx</option><option value="10000">10Kx</option></select></div>
+    <div class="ctrl-group"><label>Speed</label><select id="speedSel" onchange="changeSpeed(this.value)"><option value="1">1x</option><option value="5">5x</option><option value="10">10x</option><option value="100" selected>100x</option><option value="1000">1Kx</option><option value="10000">10Kx</option></select></div>
   </div>
   <div class="ctrl-row">
     <div class="ctrl-group"><label>From</label><input type="date" id="dateFrom" value="2026-01-02"></div>
@@ -401,7 +401,11 @@ function updateUI(msg){
       ot.push('<span class="v">'+p.entry+'</span><span class="v">'+(p.tp||"--")+'</span>')
       ot.push('<span class="v '+(p.pnl>=0?"green":"red")+'">'+(p.pnl>=0?"+":"")+p.pnl.toFixed(1)+'</span>')
       ot.push('<span class="v '+(rsk<0?"red":"green")+'">'+(rsk>=0?"+":"")+rsk.toFixed(2)+'%</span>')
-      ot.push('<span class="v">'+p.dur+'</span></div>')
+      var dlHtml=''
+      if(p.close_pct>0){dlHtml='<div style="display:inline-flex;align-items:center;gap:2px"><div style="width:20px;height:3px;background:var(--border);border-radius:2px;overflow:hidden"><div style="width:'+Math.min(p.close_pct,100)+'%;height:100%;background:var(--orange);border-radius:2px"></div></div><span style="font-size:8px;color:var(--orange)">'+Math.round(p.close_pct)+'%</span></div>'}
+      else if(p.deadline_extended){dlHtml='<span style="font-size:9px;color:var(--yellow)">&#9203; EXT</span>'}
+      else if(p.age_days>=15){dlHtml='<span style="font-size:9px;color:var(--red)">&#9888; '+p.age_days.toFixed(1)+'d</span>'}
+      ot.push('<span class="v">'+(dlHtml||p.dur||"--")+'</span></div>')
     }
     $("opentrades").innerHTML=ot.length?'<div class="ot"><span class="hdr">Side</span><span class="hdr v">Entry</span><span class="hdr v">TP</span><span class="hdr v">P&L</span><span class="hdr v">Risk</span><span class="hdr v">Age</span></div>'+ot.join(''):'<span style="color:var(--dim);font-size:11px">None</span>'
     $("totRisk").textContent=totRiskNeg.toFixed(2)+'% risk'
