@@ -762,7 +762,7 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
                 "micro_atr_window": _b.micro_atr_window,
                 "closed_trades": list(_b.closed_trades[-50:])}
             await broadcast_micro(msg)
-            sleep_s = max(0, 0.01 - (speed_multiplier / 1000.0) * 0.01)
+            sleep_s = max(0, 1.0 / speed_multiplier)
             await asyncio.sleep(sleep_s)
     acct = _b.account_summary()
     wins = sum(1 for h in _b.hit_log if h.get("pnl", 0) > 0)
