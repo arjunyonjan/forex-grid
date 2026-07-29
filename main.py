@@ -762,7 +762,8 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
                 "cumulative_pnl": round(_b.cumulative_pnl, 2),
                 "profit_target_pct": _b.PROFIT_TARGET_PCT,
                 "micro_atr_window": _b.micro_atr_window,
-                "closed_trades": list(_b.closed_trades[-50:])}
+                "closed_trades": list(_b.closed_trades[-50:]),
+                "drawdown": round(_b.equity_peak - min(_b.equity_peak, _b.balance), 2)}
             await broadcast_micro(msg)
             sleep_s = max(0, 1.0 / speed_multiplier)
             await asyncio.sleep(sleep_s)
