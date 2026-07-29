@@ -361,7 +361,7 @@ def _fmt_dur(s, now=None):
         n = n.timestamp()
     elif hasattr(s, "timestamp"):
         s = s.timestamp()
-    d = int(n - s)
+    d = abs(int(n - s))
     if d < 60:
         return f"{d}s"
     if d < 3600:
