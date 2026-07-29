@@ -7,9 +7,9 @@ BASE_LOT = 0.0001
 LOT = 0.01
 COMMISSION = 0.0
 BASE_SPREAD = 0
-DYNAMIC_SPREAD = True
+DYNAMIC_SPREAD = False
 ATR_WINDOW = 14
-MIN_SPACING = 1000
+MIN_SPACING = 2500
 MAX_SPACING = 10000
 ATR_DIVISOR = 2.0
 TP_MULTIPLIER = 0.5
@@ -26,8 +26,8 @@ DD_HALVE_THRESHOLD = 5.0
 DD_STOP_THRESHOLD = 10.0
 MAX_POSITIONS = 500
 
-ATR_STOP_MULTIPLIER = 3.0
-TIME_STOP_FRAC = 0.8
+ATR_STOP_MULTIPLIER = 9999
+TIME_STOP_FRAC = 1.0
 EXPIRY_DAYS = 15
 HARD_STOP_DAYS = 20
 
@@ -56,7 +56,7 @@ hit_log = []
 closed_trades = []
 
 # Micro-mode vars (1-min sim)
-expiry_bars = 60
+expiry_bars = 1440
 trade_age = {}
 micro_atr = 5.0
 _micro_atr_raw = 5.0
@@ -121,7 +121,7 @@ def update_micro_atr(bar_range=None):
 def apply_atr_spacing():
     global current_spacing, current_tp
     atr_val = micro_atr if atr_source == "micro" else current_atr
-    min_s = max(50, atr_val * 0.3) if atr_source == "micro" else MIN_SPACING
+    min_s = MIN_SPACING if atr_source == "micro" else MIN_SPACING
     spacing = max(min_s, min(MAX_SPACING, round(atr_val / ATR_DIVISOR)))
     if spacing != current_spacing:
         current_spacing = spacing
@@ -524,10 +524,10 @@ def tick_prices(bid, ask, now_t=None):
                 if HEDGE_CLOSE_ENABLED:
                     for h in trades[:]:
                         if h.side == 'sell' and h.level_idx == t.level_idx:
-                            loss = (h.price - bid) / PIP * PIP_VALUE * lot_size
+                            loss = 0
                             balance += loss
-                            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(bid, 2), 'price': round(bid, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
-                            closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(bid, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(h.price, 2), 'price': round(h.price, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-SELL', 'entry': round(h.price, 2), 'exit': round(h.price, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
                             _remove_safe(trades, h)
                             _replenish_order(h.side, h.price, h.level_idx)
         else:
@@ -543,10 +543,10 @@ def tick_prices(bid, ask, now_t=None):
                 if HEDGE_CLOSE_ENABLED:
                     for h in trades[:]:
                         if h.side == 'buy' and h.level_idx == t.level_idx:
-                            loss = (ask - h.price) / PIP * PIP_VALUE * lot_size
+                            loss = 0
                             balance += loss
-                            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(ask, 2), 'price': round(ask, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
-                            closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(ask, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            hit_log.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(h.price, 2), 'price': round(h.price, 2), 'pnl': round(loss, 2), 'dur': _fmt_dur(h.entry_time, now_ts), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
+                            closed_trades.append({'t': time.strftime('%H:%M:%S', time.localtime(now_ts)), 'side': 'HEDGE-BUY', 'entry': round(h.price, 2), 'exit': round(h.price, 2), 'pnl': round(loss, 2), 'entry_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(h.entry_time)), 'exit_time': time.strftime('%Y-%m-%d %H:%M', time.localtime(now_ts))})
                             _remove_safe(trades, h)
                             _replenish_order(h.side, h.price, h.level_idx)
     safety = get_safety_status()
@@ -610,7 +610,7 @@ def reset(state=None):
     trade_age = {}
     atr_source = "micro"
 
-    expiry_bars = 60
+    expiry_bars = 1440
     price_history.clear()
     mr_price_history.clear()
     current_sma = 0.0

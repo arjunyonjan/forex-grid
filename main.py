@@ -164,8 +164,10 @@ PRESETS = {
     "full2022": {"start": "2022-01-01", "end": "2022-12-31", "speed": 1000, "label": "Normal 2022"},
     "all": {"start": "2022-01-01", "end": "2026-07-31", "speed": 1000, "label": "Full Timeline"},
     "july2026": {"start": "2026-07-01", "end": "2026-07-31", "speed": 100, "label": "July 2026"},
+    "jan2026": {"start": "2026-01-02", "end": "2026-01-31", "speed": 100, "label": "Jan 2026"},
     "last7d": {"start": "2026-07-19", "end": "2026-07-24", "speed": 100, "label": "Last 7 Days"},
     "5m": {"start": "2026-06-24", "end": "2026-07-24", "speed": 50, "label": "1 Month (5m Data)", "res": 300},
+    "jul28": {"start": "2026-07-28", "end": "2026-07-28", "speed": 10, "label": "July 28 (1m)"},
 }
 
 _loop_active = False
@@ -574,39 +576,82 @@ async def broadcast_micro(msg):
                 MICRO_SUBSCRIBERS.remove(ws)
 
 def load_micro_data(start_date, end_date, tf="1m"):
-    import json, csv, concurrent.futures, threading
+    import json, csv, concurrent.futures, threading, glob
     from pathlib import Path
     cache_dir = Path("/root/forex-grid")
     cache_file = cache_dir / f"micro_{tf}_{start_date}_{end_date}.json"
     if cache_file.exists():
         return json.loads(cache_file.read_text())
     CSV_CUTOFF = "2026-01-30"
-    TF_CSV = {"1m":"XAU_1m_data.csv","5m":"XAU_5m_data.csv","15m":"XAU_15m_data.csv","30m":"XAU_30m_data.csv","1h":"XAU_1h_data.csv","4h":"XAU_4h_data.csv","1d":"XAU_1d_data.csv"}
     keys = []
-    csv_file = cache_dir / TF_CSV.get(tf, "")
-    if csv_file.exists():
+    bar_id_set = set()
+    def dedup(bar):
+        key = (bar["date"], bar["open"], bar["high"], bar["low"], bar["close"])
+        if key in bar_id_set:
+            return False
+        bar_id_set.add(key)
+        return True
+    # 1. Try merged 2004-2026 cache first (best quality)
+    merged_pattern = str(cache_dir / f"micro_{tf}_*.json")
+    merged_found = False
+    for mf_path in sorted(glob.glob(merged_pattern)):
+        mf = Path(mf_path)
+        if mf == cache_file:
+            continue
         try:
-            with open(csv_file) as fh:
-                reader = csv.reader(fh, delimiter=";")
-                next(reader, None)
-                for row in reader:
-                    if len(row) < 5:
-                        continue
-                    dt = row[0].replace(".", "-")[:16]
-                    d10 = dt[:10]
-                    if d10 < start_date:
-                        continue
-                    if d10 > end_date or d10 > CSV_CUTOFF:
-                        break
-                    o, h, l, c = float(row[1]), float(row[2]), float(row[3]), float(row[4])
-                    if o == h == l == c:
-                        continue
-                    keys.append({"date": dt, "open": o, "high": h, "low": l, "close": c})
-                    if len(keys) >= 50000:
-                        break
-        except Exception:
-            pass
-    # yfinance for dates after CSV cutoff
+            parts = mf.stem.split("_")
+            mf_start, mf_end = parts[-2], parts[-1]
+            if mf_start <= start_date:
+                all_data = json.loads(mf.read_text())
+                filtered = [d for d in all_data if start_date <= d["date"][:10] <= min(end_date, CSV_CUTOFF) and not (d["open"] == d["high"] == d["low"] == d["close"])]
+                if filtered:
+                    merged_found = True
+                    for b in filtered:
+                        if dedup(b):
+                            keys.append(b)
+        except: pass
+    # 2. CSV files (pre-2026 data)
+    if not merged_found:
+        TF_CSV = {"1m":"XAU_1m_data.csv","5m":"XAU_5m_data.csv","15m":"XAU_15m_data.csv","30m":"XAU_30m_data.csv","1h":"XAU_1h_data.csv","4h":"XAU_4h_data.csv","1d":"XAU_1d_data.csv"}
+        csv_file = cache_dir / TF_CSV.get(tf, "")
+        if csv_file.exists():
+            try:
+                with open(csv_file) as fh:
+                    reader = csv.reader(fh, delimiter=";")
+                    next(reader, None)
+                    for row in reader:
+                        if len(row) < 5:
+                            continue
+                        dt = row[0].replace(".", "-")[:16]
+                        d10 = dt[:10]
+                        if d10 < start_date:
+                            continue
+                        if d10 > min(end_date, CSV_CUTOFF):
+                            break
+                        o, h, l, c = float(row[1]), float(row[2]), float(row[3]), float(row[4])
+                        if o == h == l == c:
+                            continue
+                        b = {"date": dt, "open": o, "high": h, "low": l, "close": c}
+                        if dedup(b):
+                            keys.append(b)
+                        if len(keys) >= 50000:
+                            break
+            except Exception:
+                pass
+    # 3. gcf_5m.json for dates after CSV cutoff (covers gap Feb-Jul)
+    if end_date > CSV_CUTOFF:
+        p = Path("/root/forex-grid/gcf_5m.json")
+        if p.exists():
+            try:
+                gcf_data = json.loads(p.read_text())
+                for d in gcf_data:
+                    d10 = d["date"][:10]
+                    if d10 >= max(start_date, CSV_CUTOFF) and d10 <= end_date:
+                        if not (d["open"] == d["high"] == d["low"] == d["close"]):
+                            if dedup(d):
+                                keys.append(d)
+            except: pass
+    # 4. yfinance for very recent (last 60 days)
     if end_date > CSV_CUTOFF:
         yf_start = max(start_date, CSV_CUTOFF)
         yf_int = "1m" if tf == "1m" else "5m"
@@ -630,12 +675,14 @@ def load_micro_data(start_date, end_date, tf="1m"):
         t = threading.Thread(target=fetch_yf, daemon=True)
         t.start()
         done.wait(timeout=15)
-        keys.extend(yf_keys)
-        if keys:
-            keys.sort(key=lambda x: x["date"])
+        for b in yf_keys:
+            if dedup(b):
+                keys.append(b)
     if keys:
+        keys.sort(key=lambda x: x["date"])
         cache_file.write_text(json.dumps(keys))
         return keys
+    # 5. Last resort: raw gcf_5m.json with duplicates
     if tf == "5m":
         p = Path("/root/forex-grid/gcf_5m.json")
         if p.exists():
@@ -661,7 +708,7 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
     _b.trade_age.clear()
     _b.atr_source = atr_source
     _b.daily_trade_count = 0; _b.total_trades = 0
-    _b.lot_size = _b.BASE_LOT
+    _b.lot_size = _b.lot_size if _b.lot_size is not None and _b.lot_size > 0 else _b.BASE_LOT
     _b._prev_hedge_state = True
     global speed_multiplier
     sim_tf_seconds = 60 if tf == "1m" else 300
@@ -712,7 +759,8 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
                 "hard_profit_target": _b.hard_profit_target,
                 "cumulative_pnl": round(_b.cumulative_pnl, 2),
                 "profit_target_pct": _b.PROFIT_TARGET_PCT,
-                "micro_atr_window": _b.micro_atr_window}
+                "micro_atr_window": _b.micro_atr_window,
+                "closed_trades": list(_b.closed_trades[-50:])}
             await broadcast_micro(msg)
             sleep_s = max(0, 0.01 - (speed_multiplier / 1000.0) * 0.01)
             await asyncio.sleep(sleep_s)
@@ -730,7 +778,8 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
         "wins": wins, "losses": losses,
         "win_rate": round(wins / (wins + losses) * 100, 1) if (wins + losses) else 0,
         "won_amount": won, "lost_amount": lost,
-        "micro_atr": round(_b.micro_atr, 1), "final_spacing": _b.current_spacing}
+        "micro_atr": round(_b.micro_atr, 1), "final_spacing": _b.current_spacing,
+        "closed_trades": list(_b.closed_trades[-50:])}
     _done_msg["chart"] = _chart_micro[-500:]
     _last_done = _done_msg
     if my_id == _micro_run_id:
@@ -788,6 +837,7 @@ async def micro_start_handler(request):
             _b.set_micro_atr_window(aw)
             MICRO_ATR_WINDOW = aw
     except Exception:
+        body = None
         preset_name = "yesterday"
         MICRO_EXPIRY = 1
         MICRO_ATR_SOURCE = "micro"
@@ -830,6 +880,7 @@ async def micro_atr_source_handler(request):
             "spacing": _b.current_spacing})
         return web.json_response({"atr_source": source, "spacing": _b.current_spacing})
     except Exception:
+        body = None
         return web.json_response({"error": "invalid body"}, status=400)
 
 async def micro_speed_handler(request):
@@ -857,6 +908,7 @@ async def micro_atr_window_handler(request):
             return web.json_response({"micro_atr_window": window})
         return web.json_response({"error": "invalid window"}, status=400)
     except Exception:
+        body = None
         return web.json_response({"error": "invalid body"}, status=400)
 
 async def micro_report_handler(request):
