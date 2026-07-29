@@ -102,7 +102,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 }
 </style></head><body>
 <button id="toggle" onclick="toggleSidebar()">&#9776;</button>
-<button id="themeBtn" onclick="toggleTheme()" style="position:fixed;right:12px;top:10px;z-index:200;background:var(--card);border:1px solid var(--border);color:var(--dim);padding:4px 9px;border-radius:8px;cursor:pointer;font-size:13px;line-height:1;transition:.2s">&#9790;</button>
+<button id="themeBtn" onclick="toggleTheme()" style="position:fixed;right:12px;top:10px;z-index:200;background:var(--card);border:1px solid var(--border);color:var(--dim);padding:5px 10px;border-radius:8px;cursor:pointer;font-size:13px;line-height:1;transition:.2s" title="Toggle theme"><svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
 <div id="sidebar">
   <div class="sidebar-title">
     <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
@@ -221,11 +221,11 @@ function $(i){return document.getElementById(i)}
 function qs(s){return document.querySelector(s)}
 
 function toggleTheme(){
-  var b=document.body;b.classList.toggle("light")
-  $("themeBtn").textContent=b.classList.contains("light")?"&#9788;":"&#9790;"
-  localStorage.setItem("gridTheme",b.classList.contains("light")?"light":"dark")
+  var b=document.body;b.classList.toggle("light");var isLight=b.classList.contains("light")
+  $("themeIcon").innerHTML=isLight?'<circle cx="12" cy="12" r="5"/><g stroke="currentColor"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g>':'<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'
+  localStorage.setItem("gridTheme",isLight?"light":"dark")
 }
-(function(){if(localStorage.getItem("gridTheme")==="light"){document.body.classList.add("light");$("themeBtn").innerHTML="&#9788;"}})()
+(function(){if(localStorage.getItem("gridTheme")==="light"){document.body.classList.add("light");$("themeIcon").innerHTML='<circle cx="12" cy="12" r="5"/><g stroke="currentColor"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g>'}})()
 function toggleSidebar(){
   sidebarVisible=!sidebarVisible
   $("sidebar").classList.toggle("hidden",!sidebarVisible)
