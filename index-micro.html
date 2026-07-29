@@ -108,7 +108,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
     <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
     Grid Pro
   </div>
-  <div class="ctrl-group"><label>Preset</label><select id="presetSel" onchange="presetChanged()">
+    <div class="ctrl-group"><label>Preset</label><select id="presetSel" onchange="presetChanged()">
+    <option value="jul28" selected>July 28</option>
     <option value="">Custom</option>
     <option value="ukraine">Ukraine War</option>
     <option value="crash2022">2022 Crash</option>
@@ -128,12 +129,12 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   </select></div>
   <div class="ctrl-group"><label>Timeframe <span class="hint">TF</span></label><select id="tf"><option value="1m">1m</option><option value="5m">5m</option></select></div>
   <div class="ctrl-row">
-    <div class="ctrl-group"><label>Lot</label><select id="lotSel"><option value="0.0001">0.0001</option><option value="0.001" selected>0.001</option><option value="0.01">0.01</option><option value="0.1">0.1</option></select></div>
-    <div class="ctrl-group"><label>Speed</label><select id="speedSel" onchange="changeSpeed(this.value)"><option value="1">1x</option><option value="5">5x</option><option value="10">10x</option><option value="100" selected>100x</option><option value="1000">1Kx</option><option value="10000">10Kx</option></select></div>
+    <div class="ctrl-group"><label>Lot</label><select id="lotSel"><option value="0.00001" selected>0.00001</option><option value="0.0001">0.0001</option><option value="0.001">0.001</option><option value="0.01">0.01</option><option value="0.1">0.1</option></select></div>
+    <div class="ctrl-group"><label>Speed</label><select id="speedSel" onchange="changeSpeed(this.value)"><option value="1">1x</option><option value="5" selected>5x</option><option value="10">10x</option><option value="100">100x</option><option value="1000">1Kx</option><option value="10000">10Kx</option></select></div>
   </div>
   <div class="ctrl-row">
-    <div class="ctrl-group"><label>From</label><input type="date" id="dateFrom" value="2026-01-02"></div>
-    <div class="ctrl-group"><label>To</label><input type="date" id="dateTo" value="2026-01-31"></div>
+    <div class="ctrl-group"><label>From</label><input type="date" id="dateFrom" value="2026-07-28"></div>
+    <div class="ctrl-group"><label>To</label><input type="date" id="dateTo" value="2026-07-28"></div>
   </div>
   <div class="ctrl-row">
     <div class="ctrl-group"><label>Expiry <span class="hint">hrs</span></label><input type="number" id="expiryInp" value="4" min="0" max="9999"></div>
@@ -162,7 +163,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   <div class="status" id="statusBar"><span class="dot gray" id="statusDot"></span><span id="status">Ready. Select dates and Start.</span></div>
   <div id="chart"><canvas id="chartCanvas"></canvas></div>
   <div class="cards" id="cards">
-    <div class="card blue"><div class="lbl">Price <span id="cTime" style="font-weight:400;color:var(--dim)">--</span></div><div class="val blue" id="cPrice">--</div></div>
+    <div class="card blue"><div class="lbl">Price</div><div class="val blue" id="cPrice">--</div></div>
+    <div class="card orange"><div class="lbl">Time</div><div class="val" id="cTime" style="font-size:13px;font-weight:600">--</div></div>
     <div class="card green"><div class="lbl">Balance</div><div class="val" id="cBal">1,000,000</div></div>
     <div class="card green"><div class="lbl">Equity</div><div class="val" id="cEqu">1,000,000</div></div>
     <div class="card purple"><div class="lbl">Return</div><div class="val" id="cRet">0.00%</div></div>
@@ -380,11 +382,12 @@ function updateUI(msg){
   tradeRows.sort(function(a,b){return b.t&&a.t?b.t.localeCompare(a.t):0})
   tradeRows=tradeRows.slice(0,100)
   if(tradeRows.length){
-    var th='<div class="ct"><span class="hdr">Side</span><span class="hdr v">Entry</span><span class="hdr v">Exit</span><span class="hdr v">P&L</span><span class="hdr v">Dur</span></div>'
+    var th='<div class="ct"><span class="hdr">Side</span><span class="hdr v">Pips</span><span class="hdr v">Exit</span><span class="hdr v">P&L</span><span class="hdr v">Dur</span></div>'
     for(var i=0;i<tradeRows.length;i++){
       var tr=tradeRows[i],pcl=tr.pnl>=0?"green":"red"
+      var pips=tr.entry&&tr.exit?Math.round(Math.abs(parseFloat(tr.entry)-parseFloat(tr.exit))/0.01):(tr.pips||"--")
       th+='<div class="ct"><span class="v '+tr.cls+'">'+tr.side.slice(0,8)+'</span>'
-      th+='<span class="v">'+tr.entry+'</span><span class="v">'+tr.exit+'</span>'
+      th+='<span class="v">'+pips+'</span><span class="v">'+tr.exit+'</span>'
       th+='<span class="v '+pcl+'">'+(tr.pnl>=0?"+":"")+Number(tr.pnl).toFixed(2)+'</span>'
       th+='<span class="v">'+tr.dur+'</span></div>'
     }
@@ -407,7 +410,7 @@ function updateUI(msg){
       else if(p.age_days>=15){dlHtml='<span style="font-size:9px;color:var(--red)">&#9888; '+p.age_days.toFixed(1)+'d</span>'}
       ot.push('<span class="v">'+(dlHtml||p.dur||"--")+'</span></div>')
     }
-    $("opentrades").innerHTML=ot.length?'<div class="ot"><span class="hdr">Side</span><span class="hdr v">Entry</span><span class="hdr v">TP</span><span class="hdr v">P&L</span><span class="hdr v">Risk</span><span class="hdr v">Age</span></div>'+ot.join(''):'<span style="color:var(--dim);font-size:11px">None</span>'
+    $("opentrades").innerHTML=ot.length?'<div class="ot"><span class="hdr">Side</span><span class="hdr v">Entry</span><span class="hdr v">TP</span><span class="hdr v">Pips</span><span class="hdr v">P&L</span><span class="hdr v">Risk</span><span class="hdr v">Age</span></div>'+ot.join(''):'<span style="color:var(--dim);font-size:11px">None</span>'
     $("totRisk").textContent=totRiskNeg.toFixed(2)+'% risk'
   }
   if(msg.profit_target_pct&&msg.cumulative_pnl!=null){
