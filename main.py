@@ -723,6 +723,7 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
     _b.place_orders(kf[0]["open"])
     total = len(kf)
     atr_history = []
+    start_ts = datetime.strptime(kf[0]["date"], "%Y-%m-%d %H:%M")
     for idx, bar in enumerate(kf):
         if not MICRO_RUNNING:
             break
@@ -745,9 +746,10 @@ async def run_micro_sim(kf, expiry_hours=1, atr_source="micro", tf="1m", hard_mo
             pos = _b.open_positions(mid_p - spread/2, mid_p + spread/2, ts)
             ages = {t.id: _b.trade_age.get(t.id, 0) for t in _b.trades}
             gl = [round(o.price, 2) for o in _b.orders]
+            elapsed_secs = int((ts - start_ts).total_seconds())
             msg = {"type": "tick", "bar": idx, "total": total,
                 "bid": round(mid_p - spread/2, 2), "ask": round(mid_p + spread/2, 2),
-                "mid": round(mid_p, 2), "ts": ts.strftime("%H:%M"), "balance": _b.balance, "equity": acct["equity"],
+                "mid": round(mid_p, 2), "ts": ts.strftime("%H:%M"), "dur": elapsed_secs, "balance": _b.balance, "equity": acct["equity"],
                 "positions": pos, "hit_log": list(_b.hit_log[-30:]),
                 "spacing": _b.current_spacing, "tp": _b.current_tp,
                 "micro_atr": round(_b.micro_atr, 1), "macro_atr": round(_b.current_atr, 1),

@@ -169,6 +169,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
     <div class="card blue"><div class="lbl">Spacing</div><div class="val" id="cSpc">--</div></div>
     <div class="card orange"><div class="lbl">ATR</div><div class="val" id="cAtr">--</div></div>
     <div class="card purple"><div class="lbl">Trades</div><div class="val" id="cTrd">0</div></div>
+    <div class="card orange"><div class="lbl">Elapsed</div><div class="val" id="cDur">--</div></div>
     <div class="card blue"><div class="lbl">Bars</div><div class="val" id="cBar">0/0</div></div>
     <div class="card green"><div class="lbl">Win $</div><div class="val green" id="cWin">--</div></div>
     <div class="card red"><div class="lbl">Loss $</div><div class="val red" id="cLoss">--</div></div>
@@ -340,6 +341,7 @@ function updateUI(msg){
   $("cEqu").textContent=Number(msg.equity||0).toLocaleString("en",{maximumFractionDigits:0})
   var ret=msg.balance?((msg.balance-1000000)/1000000*100).toFixed(2):0
   $("cRet").textContent=(ret>=0?"+":"")+ret+"%";$("cRet").className="val"+(ret>=0?" green":" red")
+  if(msg.dur!=null){var d=msg.dur,h=Math.floor(d/3600),m=Math.floor((d%3600)/60),s=d%60;$("cDur").textContent=h>0?h+"h "+m+"m":m>0?m+"m "+s+"s":s+"s"}
   $("cBar").textContent=(msg.bar||0)+"/"+(msg.total||0)
   if(msg.total){var pct=((msg.bar||0)/msg.total*100).toFixed(0);$("progFill").style.width=pct+"%";if(!doneReceived)$("progFill").className="fill active"}
   if(msg.mid&&msg.micro_atr!=null&&!doneReceived&&running){var pct=Math.round((msg.bar||0)/msg.total*100);var st=$("status").textContent;if(!st.startsWith("Done")&&!st.startsWith("Stopped"))$("status").textContent="Bar "+(msg.bar||0)+"/"+(msg.total||0)+" ("+pct+"%) ATR="+msg.micro_atr.toFixed(1)}
