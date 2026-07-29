@@ -6,7 +6,8 @@
 <title>Grid Pro</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#080b14;--card:#0f1322;--card2:#161b2e;--text:#d4d8e8;--dim:#5b6380;--accent:#22d3ee;--accent2:#0891b2;--green:#10b981;--red:#ef4444;--orange:#f59e0b;--yellow:#eab308;--border:#1e2440;--glass:rgba(15,19,34,0.88);--glow:0 0 20px rgba(34,211,238,0.07)}
+:root{--bg:#080b14;--card:#0f1322;--card2:#161b2e;--text:#d4d8e8;--dim:#5b6380;--accent:#22d3ee;--accent2:#0891b2;--green:#10b981;--red:#ef4444;--orange:#f59e0b;--yellow:#eab308;--border:#1e2440;--glow:0 0 20px rgba(34,211,238,0.07)}
+.light{--bg:#f5f7fa;--card:#ffffff;--card2:#eef1f6;--text:#1a1d26;--dim:#6b7280;--accent:#0891b2;--accent2:#0e7490;--green:#059669;--red:#dc2626;--orange:#d97706;--yellow:#a16207;--border:#d1d5db;--glow:0 0 20px rgba(8,145,178,0.08)}
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);font-size:13px;height:100vh;overflow:hidden}
 #sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:var(--card);padding:16px 12px;padding-top:48px;overflow-y:auto;border-right:1px solid var(--border);transition:transform .35s cubic-bezier(.4,0,.2,1);z-index:100}
 #sidebar.hidden{transform:translateX(-100%)}
@@ -101,6 +102,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 }
 </style></head><body>
 <button id="toggle" onclick="toggleSidebar()">&#9776;</button>
+<button id="themeBtn" onclick="toggleTheme()" style="position:fixed;right:12px;top:10px;z-index:200;background:var(--card);border:1px solid var(--border);color:var(--dim);padding:4px 9px;border-radius:8px;cursor:pointer;font-size:13px;line-height:1;transition:.2s">&#9790;</button>
 <div id="sidebar">
   <div class="sidebar-title">
     <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
@@ -127,7 +129,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   <div class="ctrl-group"><label>Timeframe <span class="hint">TF</span></label><select id="tf"><option value="1m">1m</option><option value="5m">5m</option></select></div>
   <div class="ctrl-row">
     <div class="ctrl-group"><label>Lot</label><select id="lotSel"><option value="0.0001">0.0001</option><option value="0.001" selected>0.001</option><option value="0.01">0.01</option><option value="0.1">0.1</option></select></div>
-    <div class="ctrl-group"><label>Speed</label><select id="speedSel"><option value="1">1x</option><option value="10">10x</option><option value="100">100x</option><option value="1000">1Kx</option><option value="10000" selected>10Kx</option></select></div>
+    <div class="ctrl-group"><label>Speed</label><select id="speedSel"><option value="1">1x</option><option value="10">10x</option><option value="100" selected>100x</option><option value="1000">1Kx</option><option value="10000">10Kx</option></select></div>
   </div>
   <div class="ctrl-row">
     <div class="ctrl-group"><label>From</label><input type="date" id="dateFrom" value="2026-01-02"></div>
@@ -217,6 +219,12 @@ var chartEntries=[],chartExits=[],seenEntries={},seenExits={},lastDraw=0
 function $(i){return document.getElementById(i)}
 function qs(s){return document.querySelector(s)}
 
+function toggleTheme(){
+  var b=document.body;b.classList.toggle("light")
+  $("themeBtn").textContent=b.classList.contains("light")?"&#9788;":"&#9790;"
+  localStorage.setItem("gridTheme",b.classList.contains("light")?"light":"dark")
+}
+(function(){if(localStorage.getItem("gridTheme")==="light"){document.body.classList.add("light");$("themeBtn").innerHTML="&#9788;"}})()
 function toggleSidebar(){
   sidebarVisible=!sidebarVisible
   $("sidebar").classList.toggle("hidden",!sidebarVisible)
